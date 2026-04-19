@@ -1,13 +1,21 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useGestures } from '../hooks/useGestures'
 
-export default function Canvas({ gridSize, gridWidth, gridHeight, selectedColor, tool, canvasData, onCanvasChange }) {
+export default function Canvas({
+  gridSize,
+  gridWidth,
+  gridHeight,
+  selectedColor,
+  tool,
+  canvasData,
+  onCanvasChange
+}) {
   const canvasRef = useRef(null)
   const containerRef = useRef(null)
   const [isDrawing, setIsDrawing] = useState(false)
   const [hoverCell, setHoverCell] = useState(null)
-  const [scale, setScale] = useState(1)
-  const [offset, setOffset] = useState({ x: 0, y: 0 })
+  const [mode, setMode] = useState('draw') // 'draw' | 'gesture'
+  const lastDrawTouchRef = useRef(null)
 
   const CELL_SIZE = 16
   const cols = gridWidth || gridSize
@@ -15,20 +23,15 @@ export default function Canvas({ gridSize, gridWidth, gridHeight, selectedColor,
   const canvasWidth = cols * CELL_SIZE
   const canvasHeight = rows * CELL_SIZE
 
-  // 手势处理
-  const { ref: gestureRef } = useGestures({
-    onPinch: useCallback(({ scale: newScale }) => {
-      setScale(prev => Math.max(0.5, Math.min(3, prev * newScale)))
-    }, []),
-    onPan: useCallback((delta) => {
-      setOffset(prev => ({
-        x: prev.x + delta.x,
-        y: prev.y + delta.y,
-      }))
-    }, []),
-    onLongPress: useCallback((pos) => {
-      // 长按弹出颜色选择
-    }, []),
+  const { ref: gestureRef, transform, resetTransform, setTransform, isGestureActive } = useGestures({
+    minScale: 0.3,
+    maxScale: 5,
+    friction: 0.88,
+    bounceIntensity: 0.2,
+    minX: -canvasWidth,
+    maxX: canvasWidth,
+    minY: -canvasHeight,
+    maxY: canvasHeight,
   })
 
   // 合并 refs
@@ -44,11 +47,9 @@ export default function Canvas({ gridSize, gridWidth, gridHeight, selectedColor,
 
     const ctx = canvas.getContext('2d')
 
-    // 清空画布
     ctx.fillStyle = '#ffffff'
     ctx.fillRect(0, 0, canvasWidth, canvasHeight)
 
-    // 绘制每个格子
     if (canvasData) {
       for (let y = 0; y < rows; y++) {
         for (let x = 0; x < cols; x++) {
@@ -60,9 +61,8 @@ export default function Canvas({ gridSize, gridWidth, gridHeight, selectedColor,
       }
     }
 
-    // 绘制网格线
-    ctx.strokeStyle = '#e0e0e0'
-    ctx.lineWidth = 1
+    ctx.strokeStyle = '#d4d4d4'
+    ctx.lineWidth = 0.5
     for (let i = 0; i <= cols; i++) {
       ctx.beginPath()
       ctx.moveTo(i * CELL_SIZE, 0)
@@ -76,26 +76,30 @@ export default function Canvas({ gridSize, gridWidth, gridHeight, selectedColor,
       ctx.stroke()
     }
 
-    // 绘制 hover 高亮
     if (hoverCell && tool === 'pencil') {
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.1)'
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.08)'
       ctx.fillRect(hoverCell.x * CELL_SIZE, hoverCell.y * CELL_SIZE, CELL_SIZE, CELL_SIZE)
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)'
+      ctx.lineWidth = 2
+      ctx.strokeRect(hoverCell.x * CELL_SIZE, hoverCell.y * CELL_SIZE, CELL_SIZE, CELL_SIZE)
     }
   }, [canvasData, cols, rows, hoverCell, tool, canvasWidth, canvasHeight])
 
-  const getGridPos = (e) => {
+  const getGridPos = useCallback((clientX, clientY) => {
     const canvas = canvasRef.current
     if (!canvas) return null
 
     const rect = canvas.getBoundingClientRect()
-    const x = Math.floor((e.clientX - rect.left) / CELL_SIZE)
-    const y = Math.floor((e.clientY - rect.top) / CELL_SIZE)
+    const scaleX = canvas.width / rect.width
+    const scaleY = canvas.height / rect.height
+    const x = Math.floor((clientX - rect.left) * scaleX / CELL_SIZE)
+    const y = Math.floor((clientY - rect.top) * scaleY / CELL_SIZE)
 
     if (x >= 0 && x < cols && y >= 0 && y < rows) {
       return { x, y }
     }
     return null
-  }
+  }, [cols, rows])
 
   const drawCell = useCallback((x, y) => {
     if (!canvasData) return
@@ -107,7 +111,6 @@ export default function Canvas({ gridSize, gridWidth, gridHeight, selectedColor,
     } else if (tool === 'eraser') {
       newData[y][x] = null
     } else if (tool === 'fill') {
-      // 洪水填充
       const targetColor = canvasData[y][x]
       const fillColor = selectedColor
       if (targetColor === fillColor) return
@@ -133,80 +136,133 @@ export default function Canvas({ gridSize, gridWidth, gridHeight, selectedColor,
     onCanvasChange(newData)
   }, [canvasData, selectedColor, tool, cols, rows, onCanvasChange])
 
-  const handleMouseDown = (e) => {
-    const pos = getGridPos(e)
+  // 触控处理 - 区分绘制和手势
+  const handleTouchStart = useCallback((e) => {
+    if (e.touches.length === 2) {
+      setMode('gesture')
+      setIsDrawing(false)
+      return
+    }
+
+    if (e.touches.length === 1) {
+      const touch = e.touches[0]
+      const pos = getGridPos(touch.clientX, touch.clientY)
+
+      if (pos) {
+        setMode('draw')
+        setIsDrawing(true)
+        lastDrawTouchRef.current = touch
+        drawCell(pos.x, pos.y)
+      }
+    }
+  }, [getGridPos, drawCell])
+
+  const handleTouchMove = useCallback((e) => {
+    if (e.touches.length === 2) {
+      return
+    }
+
+    if (e.touches.length === 1 && isDrawing && mode === 'draw') {
+      e.preventDefault()
+      const touch = e.touches[0]
+      const pos = getGridPos(touch.clientX, touch.clientY)
+      setHoverCell(pos)
+
+      if (pos) {
+        drawCell(pos.x, pos.y)
+      }
+    }
+  }, [isDrawing, mode, getGridPos, drawCell])
+
+  const handleTouchEnd = useCallback((e) => {
+    if (e.touches.length === 0) {
+      setIsDrawing(false)
+      setMode('draw')
+      lastDrawTouchRef.current = null
+    }
+  }, [])
+
+  const handleTouchCancel = useCallback(() => {
+    setIsDrawing(false)
+    setMode('draw')
+    lastDrawTouchRef.current = null
+  }, [])
+
+  // 双击重置缩放
+  const handleDoubleClick = useCallback(() => {
+    resetTransform()
+  }, [resetTransform])
+
+  // 滚轮缩放（桌面端）
+  const handleWheel = useCallback((e) => {
+    e.preventDefault()
+    const delta = e.deltaY > 0 ? 0.9 : 1.1
+    setTransform(prev => ({
+      ...prev,
+      scale: Math.max(0.3, Math.min(5, prev.scale * delta))
+    }))
+  }, [setTransform])
+
+  const handleMouseDown = useCallback((e) => {
+    if (e.button !== 0) return
+    const pos = getGridPos(e.clientX, e.clientY)
     if (pos) {
       setIsDrawing(true)
       drawCell(pos.x, pos.y)
     }
-  }
+  }, [getGridPos, drawCell])
 
-  const handleMouseMove = (e) => {
-    const pos = getGridPos(e)
+  const handleMouseMove = useCallback((e) => {
+    const pos = getGridPos(e.clientX, e.clientY)
     setHoverCell(pos)
 
-    if (isDrawing && pos) {
+    if (isDrawing) {
       drawCell(pos.x, pos.y)
     }
-  }
+  }, [getGridPos, drawCell, isDrawing])
 
-  const handleMouseUp = () => {
+  const handleMouseUp = useCallback(() => {
     setIsDrawing(false)
-  }
+  }, [])
 
-  const handleMouseLeave = () => {
+  const handleMouseLeave = useCallback(() => {
     setHoverCell(null)
     setIsDrawing(false)
+  }, [])
+
+  // 构建 transform 样式
+  const transformStyle = {
+    transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`,
+    transformOrigin: 'center center',
+    willChange: 'transform',
   }
 
-  const handleWheel = (e) => {
-    e.stopPropagation()
-  }
-
-  // 触控事件处理
-  const handleTouchStart = (e) => {
-    if (e.touches.length === 1) {
-      const touch = e.touches[0]
-      const pos = getGridPos(touch)
-      if (pos) {
-        setIsDrawing(true)
-        drawCell(pos.x, pos.y)
-      }
-    }
-  }
-
-  const handleTouchMove = (e) => {
-    if (e.touches.length === 1) {
-      const touch = e.touches[0]
-      const pos = getGridPos(touch)
-      setHoverCell(pos)
-
-      if (isDrawing && pos) {
-        drawCell(pos.x, pos.y)
-      }
-    }
-  }
-
-  const handleTouchEnd = () => {
-    setIsDrawing(false)
+  if (transform.originX !== undefined) {
+    transformStyle.transformOrigin = `${transform.originX}px ${transform.originY}px`
   }
 
   return (
     <div className="canvas-wrapper">
       <div className="canvas-info">
-        <span>{cols} x {rows} 格子</span>
+        <span>{cols} × {rows}</span>
         <span>|</span>
-        <span>当前颜色: <span className="color-dot" style={{ backgroundColor: selectedColor }} /></span>
-      </div>
-      <div className="canvas-container" onWheel={handleWheel}>
-        <div
-          className="canvas-border"
-          ref={setContainerRef}
-          style={{
-            transform: `scale(${scale}) translate(${offset.x}px, ${offset.y}px)`,
-            transformOrigin: 'center center',
-          }}
+        <span>{Math.round(transform.scale * 100)}%</span>
+        <button
+          className="reset-btn"
+          onClick={resetTransform}
+          title="双击或点击重置缩放"
         >
+          重置
+        </button>
+      </div>
+
+      <div
+        className="canvas-container"
+        ref={setContainerRef}
+        onWheel={handleWheel}
+        onDoubleClick={handleDoubleClick}
+      >
+        <div className="canvas-inner" style={transformStyle}>
           <canvas
             ref={canvasRef}
             width={canvasWidth}
@@ -218,10 +274,12 @@ export default function Canvas({ gridSize, gridWidth, gridHeight, selectedColor,
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
+            onTouchCancel={handleTouchCancel}
             style={{
-              cursor: tool === 'eraser' ? 'crosshair' : 'pointer',
+              cursor: isDrawing ? 'grabbing' : tool === 'eraser' ? 'crosshair' : 'crosshair',
               imageRendering: 'pixelated',
               touchAction: 'none',
+              display: 'block',
             }}
           />
         </div>
@@ -233,47 +291,61 @@ export default function Canvas({ gridSize, gridWidth, gridHeight, selectedColor,
           flex-direction: column;
           gap: 12px;
           align-items: center;
+          padding: 16px;
         }
+
         .canvas-info {
           display: flex;
           gap: 12px;
-          font-size: 12px;
-          color: var(--text-muted);
+          font-size: 13px;
+          color: #6b7280;
           justify-content: center;
           align-items: center;
-          position: sticky;
-          top: 0;
-          background: var(--bg-primary);
-          padding: 8px 12px;
-          z-index: 10;
-          border-radius: 8px;
+          background: #f9fafb;
+          padding: 8px 16px;
+          border-radius: 20px;
+          border: 1px solid #e5e7eb;
         }
-        .color-dot {
-          display: inline-block;
-          width: 12px;
-          height: 12px;
-          border-radius: 50%;
-          vertical-align: middle;
-          margin-left: 4px;
-          border: 1px solid rgba(0,0,0,0.15);
+
+        .reset-btn {
+          background: #3b82f6;
+          color: white;
+          border: none;
+          padding: 4px 12px;
+          border-radius: 12px;
+          font-size: 12px;
+          cursor: pointer;
+          transition: all 0.2s;
         }
+
+        .reset-btn:hover {
+          background: #2563eb;
+          transform: scale(1.05);
+        }
+
         .canvas-container {
-          display: inline-block;
-          overflow: hidden;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          overflow: visible;
+          touch-action: none;
+          padding: 40px;
         }
-        .canvas-border {
+
+        .canvas-inner {
           background: white;
           border-radius: 12px;
           padding: 12px;
           box-shadow:
-            0 2px 8px var(--shadow-md),
-            0 4px 24px var(--shadow-lg),
-            inset 0 0 0 1px rgba(0, 0, 0, 0.05);
-          transition: transform 0.1s ease-out;
+            0 4px 6px -1px rgba(0, 0, 0, 0.1),
+            0 2px 4px -2px rgba(0, 0, 0, 0.1),
+            0 0 0 1px rgba(0, 0, 0, 0.05);
+          transition: transform 0.1s cubic-bezier(0.34, 1.56, 0.64, 1);
+          position: relative;
         }
-        canvas {
-          display: block;
-          border-radius: 4px;
+
+        .canvas-inner.settling {
+          transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
         }
       `}</style>
     </div>

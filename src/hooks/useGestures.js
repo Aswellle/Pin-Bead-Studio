@@ -1,25 +1,34 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 
 /**
- * 移动端手势支持 Hook
- * 支持：双指缩放、双指拖动、长按
+ * 优化的移动端手势 Hook
+ * 支持：双指缩放（以 pinch 中心为原点）、双指拖动、惯性滚动、边界回弹
  */
 export function useGestures({
   onPinch,
   onPan,
-  onLongPress,
-  onTap,
-  threshold = 10,
-  longPressDelay = 500,
+  onDoubleTap,
+  minScale = 0.5,
+  maxScale = 3,
+  minX = -500,
+  maxX = 500,
+  minY = -500,
+  maxY = 500,
+  friction = 0.92,
+  bounceIntensity = 0.15,
 }) {
+  const [transform, setTransform] = useState({ scale: 1, x: 0, y: 0 })
   const [isGestureActive, setIsGestureActive] = useState(false)
-  const [gestureType, setGestureType] = useState(null)
 
   const touchesRef = useRef([])
+  const lastTouchesRef = useRef([])
   const initialDistanceRef = useRef(0)
   const initialScaleRef = useRef(1)
-  const initialCenterRef = useRef({ x: 0, y: 0 })
-  const longPressTimerRef = useRef(null)
+  const initialXRef = useRef(0)
+  const initialYRef = useRef(0)
+  const velocityRef = useRef({ x: 0, y: 0 })
+  const lastMoveTimeRef = useRef(0)
+  const animationFrameRef = useRef(null)
   const elementRef = useRef(null)
 
   const getDistance = useCallback((touches) => {
@@ -30,87 +39,186 @@ export function useGestures({
   }, [])
 
   const getCenter = useCallback((touches) => {
-    if (touches.length < 2) return { x: touches[0].clientX, y: touches[0].clientY }
+    if (touches.length < 2) {
+      return { x: touches[0].clientX, y: touches[0].clientY }
+    }
     return {
       x: (touches[0].clientX + touches[1].clientX) / 2,
       y: (touches[0].clientY + touches[1].clientY) / 2,
     }
   }, [])
 
+  const clampScale = useCallback((scale) => {
+    if (scale < minScale) return minScale - (minScale - scale) * bounceIntensity
+    if (scale > maxScale) return maxScale + (scale - maxScale) * bounceIntensity
+    return scale
+  }, [minScale, maxScale, bounceIntensity])
+
+  const clampPosition = useCallback((x, y) => {
+    const scaledMinX = minX * transform.scale
+    const scaledMaxX = maxX * transform.scale
+    const scaledMinY = minY * transform.scale
+    const scaledMaxY = maxY * transform.scale
+
+    if (x < scaledMinX) return scaledMinX + (x - scaledMinX) * bounceIntensity
+    if (x > scaledMaxX) return scaledMaxX + (x - scaledMaxX) * bounceIntensity
+    return x
+  }, [minX, maxX, minY, maxY, transform.scale, bounceIntensity])
+
+  const startMomentum = useCallback(() => {
+    const applyMomentum = () => {
+      const { x, y } = velocityRef.current
+      const speed = Math.sqrt(x * x + y * y)
+
+      if (speed < 0.5) {
+        velocityRef.current = { x: 0, y: 0 }
+        return
+      }
+
+      setTransform(prev => {
+        const newX = clampPosition(prev.x + x, prev.y)
+        const newY = clampPosition(prev.x, prev.y + y)
+        return { ...prev, x: newX, y: newY }
+      })
+
+      velocityRef.current = {
+        x: velocityRef.current.x * friction,
+        y: velocityRef.current.y * friction,
+      }
+
+      animationFrameRef.current = requestAnimationFrame(applyMomentum)
+    }
+
+    animationFrameRef.current = requestAnimationFrame(applyMomentum)
+  }, [friction, clampPosition])
+
+  const stopMomentum = useCallback(() => {
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current)
+      animationFrameRef.current = null
+    }
+    velocityRef.current = { x: 0, y: 0 }
+  }, [])
+
   const handleTouchStart = useCallback((e) => {
+    if (e.touches.length === 2) {
+      e.preventDefault()
+    }
+
+    stopMomentum()
+
     const touches = Array.from(e.touches)
     touchesRef.current = touches
+    lastTouchesRef.current = touches
 
-    if (touches.length === 1) {
-      // 单指：启动长按计时器
-      if (onLongPress) {
-        longPressTimerRef.current = setTimeout(() => {
-          setIsGestureActive(true)
-          setGestureType('longPress')
-          onLongPress({ x: touches[0].clientX, y: touches[0].clientY })
-        }, longPressDelay)
-      }
-    } else if (touches.length === 2) {
-      // 双指：初始化缩放
-      clearTimeout(longPressTimerRef.current)
+    if (touches.length === 2) {
       initialDistanceRef.current = getDistance(touches)
-      initialCenterRef.current = getCenter(touches)
+      initialScaleRef.current = transform.scale
+      initialXRef.current = transform.x
+      initialYRef.current = transform.y
       setIsGestureActive(true)
-      setGestureType('pinch')
     }
-  }, [getDistance, getCenter, onLongPress, longPressDelay])
+
+    lastMoveTimeRef.current = Date.now()
+  }, [getDistance, transform, stopMomentum])
 
   const handleTouchMove = useCallback((e) => {
     const touches = Array.from(e.touches)
+    const now = Date.now()
+    const dt = now - lastMoveTimeRef.current
+
     touchesRef.current = touches
+    lastTouchesRef.current = touches
 
-    clearTimeout(longPressTimerRef.current)
+    if (touches.length === 2) {
+      e.preventDefault()
 
-    if (touches.length === 2 && gestureType === 'pinch') {
-      // 双指缩放
       const currentDistance = getDistance(touches)
-      const scale = currentDistance / initialDistanceRef.current
+      const scaleDelta = currentDistance / initialDistanceRef.current
+      const newScale = clampScale(initialScaleRef.current * scaleDelta)
+
       const center = getCenter(touches)
-      const deltaCenter = {
-        x: center.x - initialCenterRef.current.x,
-        y: center.y - initialCenterRef.current.y,
-      }
+      const rect = elementRef.current?.getBoundingClientRect()
+      const elementCenterX = rect ? rect.width / 2 : 0
+      const elementCenterY = rect ? rect.height / 2 : 0
+
+      const pinchCenterX = center.x - (elementRef.current?.getBoundingClientRect().left || 0)
+      const pinchCenterY = center.y - (elementRef.current?.getBoundingClientRect().top || 0)
+
+      setTransform(prev => ({
+        scale: newScale,
+        x: prev.x,
+        y: prev.y,
+        originX: pinchCenterX,
+        originY: pinchCenterY,
+      }))
 
       if (onPinch) {
-        onPinch({
-          scale,
-          center,
-          deltaCenter,
-          initialScale: initialScaleRef.current,
-        })
+        onPinch({ scale: newScale, center })
       }
-    } else if (touches.length === 1 && gestureType === 'pan') {
-      // 单指拖动
-      const delta = {
-        x: touches[0].clientX - touchesRef.current[0].clientX,
-        y: touches[0].clientY - touchesRef.current[0].clientY,
-      }
+    } else if (touches.length === 1 && isGestureActive) {
+      e.preventDefault()
 
-      if (onPan) {
-        onPan(delta)
+      const lastTouch = lastTouchesRef.current[0]
+      if (lastTouch) {
+        const dx = touches[0].clientX - lastTouch.clientX
+        const dy = touches[0].clientY - lastTouch.clientY
+
+        if (dt > 0) {
+          velocityRef.current = {
+            x: dx / dt * 16,
+            y: dy / dt * 16,
+          }
+        }
+
+        setTransform(prev => ({
+          ...prev,
+          x: clampPosition(prev.x + dx, prev.y + dy),
+          y: clampPosition(prev.x, prev.y + dy),
+        }))
+
+        if (onPan) {
+          onPan({ x: dx, y: dy })
+        }
       }
     }
-  }, [getDistance, getCenter, gestureType, onPinch, onPan])
+
+    lastMoveTimeRef.current = now
+  }, [getDistance, getCenter, clampScale, clampPosition, onPinch, onPan, isGestureActive])
 
   const handleTouchEnd = useCallback((e) => {
-    clearTimeout(longPressTimerRef.current)
+    const remainingTouches = e.touches.length
 
-    if (e.touches.length === 0) {
-      // 所有手指离开
-      if (gestureType === 'longPress' && onTap) {
-        // 长按后的点击
+    if (remainingTouches === 0) {
+      setIsGestureActive(false)
+
+      setTransform(prev => ({
+        ...prev,
+        scale: clampScale(prev.scale),
+        x: clampPosition(prev.x, prev.y),
+        originX: undefined,
+        originY: undefined,
+      }))
+
+      if (Math.abs(velocityRef.current.x) > 1 || Math.abs(velocityRef.current.y) > 1) {
+        startMomentum()
       }
 
-      setIsGestureActive(false)
-      setGestureType(null)
       touchesRef.current = []
+      lastTouchesRef.current = []
+    } else if (remainingTouches === 1) {
+      const touch = e.touches[0]
+      touchesRef.current = [touch]
+      lastTouchesRef.current = [touch]
+      initialXRef.current = transform.x
+      initialYRef.current = transform.y
     }
-  }, [gestureType, onTap])
+  }, [clampScale, clampPosition, startMomentum, transform])
+
+  const resetTransform = useCallback(() => {
+    stopMomentum()
+    setTransform({ scale: 1, x: 0, y: 0 })
+  }, [stopMomentum])
 
   useEffect(() => {
     const element = elementRef.current
@@ -126,13 +234,15 @@ export function useGestures({
       element.removeEventListener('touchmove', handleTouchMove)
       element.removeEventListener('touchend', handleTouchEnd)
       element.removeEventListener('touchcancel', handleTouchEnd)
-      clearTimeout(longPressTimerRef.current)
+      stopMomentum()
     }
-  }, [handleTouchStart, handleTouchMove, handleTouchEnd])
+  }, [handleTouchStart, handleTouchMove, handleTouchEnd, stopMomentum])
 
   return {
     ref: elementRef,
+    transform,
     isGestureActive,
-    gestureType,
+    resetTransform,
+    setTransform,
   }
 }
