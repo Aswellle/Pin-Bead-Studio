@@ -82,7 +82,64 @@ export function useAuth() {
   return { user, loading, login, register, logout }
 }
 
-export default function Tools({ tool, onToolChange, gridSize, onGridSizeChange, collapsed, onToggleCollapse, onUndo, onClear, canUndo, onOpenQuantizer }) {
+export default function Tools({
+  tool,
+  onToolChange,
+  gridSize,
+  gridWidth,
+  gridHeight,
+  onGridSizeChange,
+  onGridDimensionsChange,
+  collapsed,
+  onToggleCollapse,
+  onUndo,
+  onClear,
+  canUndo,
+  onOpenQuantizer
+}) {
+  // 当前显示的尺寸
+  const currentWidth = gridWidth || gridSize
+  const currentHeight = gridHeight || gridSize
+  const isRectangular = gridWidth !== null && gridHeight !== null
+
+  const handlePresetChange = (e) => {
+    const value = e.target.value
+    if (value === 'custom') {
+      // 自定义尺寸 - 弹出prompt让用户输入
+      const input = prompt('请输入画布尺寸（如：87x58 或 87）:', `${currentWidth}x${currentHeight}`)
+      if (!input) return
+      const parts = input.toLowerCase().split('x').map(s => parseInt(s.trim(), 10))
+      if (isNaN(parts[0]) || parts[0] < 9 || parts[0] > 200) {
+        alert('宽度必须在 9-200 之间')
+        return
+      }
+      if (parts.length === 2) {
+        if (isNaN(parts[1]) || parts[1] < 9 || parts[1] > 200) {
+          alert('高度必须在 9-200 之间')
+          return
+        }
+        onGridDimensionsChange(parts[0], parts[1])
+      } else {
+        onGridDimensionsChange(parts[0], parts[0])
+      }
+      return
+    }
+    const parts = value.split('x').map(Number)
+    if (parts.length === 2) {
+      onGridDimensionsChange(parts[0], parts[1])
+    } else {
+      onGridSizeChange(parts[0])
+    }
+  }
+
+  // 计算当前选中项
+  const getCurrentPreset = () => {
+    if (isRectangular) {
+      return `${currentWidth}x${currentHeight}`
+    }
+    return String(currentWidth)
+  }
+
   return (
     <div className={`tools-drawer ${collapsed ? 'collapsed' : ''}`}>
       <button
@@ -140,15 +197,39 @@ export default function Tools({ tool, onToolChange, gridSize, onGridSizeChange, 
         <div className="tool-group">
           <label className="tool-label">画布尺寸</label>
           <select
-            value={gridSize}
-            onChange={(e) => onGridSizeChange(Number(e.target.value))}
+            value={getCurrentPreset()}
+            onChange={handlePresetChange}
             className="tool-select"
           >
-            <option value={9}>9 x 9 (小图标)</option>
-            <option value={29}>29 x 29 (标准)</option>
-            <option value={57}>57 x 57 (大图)</option>
-            <option value={114}>114 x 114 (超大)</option>
+            <optgroup label="—— 方形 ——">
+              <option value="29">29×29 小图标</option>
+              <option value="57">57×57 标准</option>
+              <option value="87">87×87 大图</option>
+              <option value="114">114×114 超大</option>
+              <option value="140">140×140 巨幅</option>
+              <option value="170">170×170 超巨幅</option>
+            </optgroup>
+            <optgroup label="—— 矩形 ——">
+              <option value="57x29">57×29 横向</option>
+              <option value="87x58">87×58 横向</option>
+              <option value="114x87">114×87 横向</option>
+              <option value="140x105">140×105 横向</option>
+              <option value="170x115">170×115 横向</option>
+              <option value="29x57">29×57 纵向</option>
+              <option value="58x87">58×87 纵向</option>
+              <option value="87x114">87×114 纵向</option>
+              <option value="105x140">105×140 纵向</option>
+              <option value="115x170">115×170 纵向</option>
+            </optgroup>
+            <optgroup label="—— 自定义 ——">
+              <option value="custom">自定义尺寸...</option>
+            </optgroup>
           </select>
+          {isRectangular && (
+            <div className="current-size-info">
+              {currentWidth} × {currentHeight}（{currentWidth * currentHeight} 格）
+            </div>
+          )}
         </div>
 
         <div className="tool-group">
@@ -289,6 +370,12 @@ export default function Tools({ tool, onToolChange, gridSize, onGridSizeChange, 
         }
         .tool-select:focus {
           border-color: var(--accent);
+        }
+        .current-size-info {
+          margin-top: 6px;
+          font-size: 11px;
+          color: var(--text-muted);
+          text-align: center;
         }
         .quick-actions {
           display: flex;

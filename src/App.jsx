@@ -119,6 +119,26 @@ export default function App() {
     setCanvasData(emptyGrid)
   }
 
+  // 处理画布尺寸变更（支持矩形）
+  const handleGridDimensionsChange = (width, height) => {
+    if (width === height) {
+      // 正方形
+      setGridSize(width)
+      setGridWidth(null)
+      setGridHeight(null)
+      const emptyGrid = Array(height).fill(null).map(() => Array(width).fill(null))
+      setCanvasData(emptyGrid)
+    } else {
+      // 矩形
+      const maxDim = Math.max(width, height)
+      setGridSize(maxDim)
+      setGridWidth(width)
+      setGridHeight(height)
+      const emptyGrid = Array(height).fill(null).map(() => Array(width).fill(null))
+      setCanvasData(emptyGrid)
+    }
+  }
+
   // 加载模板到画布
   const handleLoadTemplate = (pattern, size) => {
     setGridSize(size)
@@ -232,7 +252,10 @@ export default function App() {
             tool={tool}
             onToolChange={setTool}
             gridSize={gridSize}
+            gridWidth={gridWidth}
+            gridHeight={gridHeight}
             onGridSizeChange={handleGridSizeChange}
+            onGridDimensionsChange={handleGridDimensionsChange}
             collapsed={leftSidebarCollapsed}
             onToggleCollapse={() => setLeftSidebarCollapsed(!leftSidebarCollapsed)}
             onUndo={handleUndo}
