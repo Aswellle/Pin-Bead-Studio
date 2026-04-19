@@ -1,0 +1,64 @@
+{
+  "app": {
+    "title": "Bead Studio",
+    "subtitle": "Next-generation bead pattern design tool"
+  },
+  "nav": {
+    "canvas": "Canvas",
+    "gallery": "Gallery",
+    "tutorials": "Tutorials"
+  },
+  "palette": {
+    "title": "Color Palette",
+    "brand": {
+      "perler": "Perler (USA)",
+      "hama": "Hama (Denmark)",
+      "artkal": "Artkal (China/Netherlands)"
+    },
+    "search": "Search colors...",
+    "recent": "Recently used",
+    "colors": "colors"
+  },
+  "quantizer": {
+    "title": "Image to Beads",
+    "dragDrop": "Drop image here",
+    "or": "or",
+    "browse": "Browse Files",
+    "paste": "Paste Image (Ctrl+V)",
+    "changeImage": "Change Image",
+    "settings": "Quantize Settings",
+    "palette": "Target Palette",
+    "gridSize": "Canvas Size",
+    "maxColors": "Max Colors",
+    "standard": "Standard",
+    "large": "Large",
+    "extraLarge": "Extra Large",
+    "processing": "Processing",
+    "preview": "Preview",
+    "colorsUsed": "Colors Used",
+    "generate": "Generate Pattern",
+    "reset": "Reset",
+    "applyToCanvas": "Apply to Canvas"
+  },
+  "canvas": {
+    "size": "Canvas Size",
+    "tool": {
+      "pencil": "Pencil",
+      "eraser": "Eraser",
+      "fill": "Fill"
+    }
+  },
+  "export": {
+    "title": "Export Pattern",
+    "png": "PNG Image",
+    "svg": "SVG Vector",
+    "text": "Pattern Text"
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "clear": "Clear",
+    "undo": "Undo",
+    "loading": "Loading..."
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "app": {
+    "title": "拼豆Studio",
+    "subtitle": "新一代拼豆图纸设计工具"
+  },
+  "nav": {
+    "canvas": "画布",
+    "gallery": "图库",
+    "tutorials": "教程"
+  },
+  "palette": {
+    "title": "色卡",
+    "brand": {
+      "perler": "Perler (美国)",
+      "hama": "Hama (丹麦)",
+      "artkal": "Artkal (中国/荷兰)"
+    },
+    "search": "搜索颜色...",
+    "recent": "最近使用",
+    "colors": "色"
+  },
+  "quantizer": {
+    "title": "图片转拼豆",
+    "dragDrop": "拖拽图片到这里",
+    "or": "或",
+    "browse": "浏览文件",
+    "paste": "粘贴图片 (Ctrl+V)",
+    "changeImage": "更换图片",
+    "settings": "量化设置",
+    "palette": "目标色卡",
+    "gridSize": "画布尺寸",
+    "maxColors": "目标颜色数",
+    "standard": "标准",
+    "large": "大图",
+    "extraLarge": "超大",
+    "processing": "处理中",
+    "preview": "预览",
+    "colorsUsed": "使用颜色",
+    "generate": "生成图纸",
+    "reset": "重新上传",
+    "applyToCanvas": "应用到画布"
+  },
+  "canvas": {
+    "size": "画布尺寸",
+    "tool": {
+      "pencil": "画笔",
+      "eraser": "橡皮擦",
+      "fill": "填充"
+    }
+  },
+  "export": {
+    "title": "导出图纸",
+    "png": "PNG 图片",
+    "svg": "SVG 矢量",
+    "text": "图纸文本"
+  },
+  "common": {
+    "save": "保存",
+    "cancel": "取消",
+    "clear": "清空",
+    "undo": "撤销",
+    "loading": "加载中..."
+  }
+}

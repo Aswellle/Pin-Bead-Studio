@@ -1,0 +1,579 @@
+import { useState, useEffect, useRef } from 'react'
+import { TEMPLATES, CATEGORIES, DIFFICULTIES } from '../data/templates'
+import { getPalette } from '../data/palettes'
+
+const CELL_SIZE = 8
+
+const resolveToHex = (colorVal, palette) => {
+  if (!colorVal) return null
+  if (typeof colorVal === 'string' && colorVal.startsWith('#')) return colorVal
+  const found = palette.colors.find(c => c.id === colorVal)
+  return found ? found.hex : colorVal
+}
+
+export default function Gallery({ onLoadTemplate, onSaveWork, savedWorks = [] }) {
+  const [searchTerm, setSearchTerm] = useState('')
+  const [selectedCategory, setSelectedCategory] = useState('全部')
+  const [selectedDifficulty, setSelectedDifficulty] = useState('全部')
+  const [favorites, setFavorites] = useState(() => {
+    const saved = localStorage.getItem('gallery-favorites')
+    return saved ? JSON.parse(saved) : []
+  })
+  const [showFavorites, setShowFavorites] = useState(false)
+  const [showMyWorks, setShowMyWorks] = useState(false)
+
+  // 保存收藏到 localStorage
+  useEffect(() => {
+    localStorage.setItem('gallery-favorites', JSON.stringify(favorites))
+  }, [favorites])
+
+  // 筛选模板
+  const filteredTemplates = TEMPLATES.filter(template => {
+    const matchesSearch = template.name.toLowerCase().includes(searchTerm.toLowerCase())
+    const matchesCategory = selectedCategory === '全部' || template.category === selectedCategory
+    const matchesDifficulty = selectedDifficulty === '全部' || template.difficulty === selectedDifficulty
+    const matchesFavorite = !showFavorites || favorites.includes(template.id)
+    return matchesSearch && matchesCategory && matchesDifficulty && matchesFavorite
+  })
+
+  // 切换收藏
+  const toggleFavorite = (id, e) => {
+    e.stopPropagation()
+    setFavorites(prev =>
+      prev.includes(id) ? prev.filter(f => f !== id) : [...prev, id]
+    )
+  }
+
+  // 获取难度颜色
+  const getDifficultyColor = (difficulty) => {
+    switch (difficulty) {
+      case '简单': return '#4CAF50'
+      case '中等': return '#FF9800'
+      case '困难': return '#E53935'
+      default: return '#999'
+    }
+  }
+
+  return (
+    <div className="gallery-page">
+      <div className="gallery-header">
+        <h1 className="gallery-title">图库</h1>
+        <p className="gallery-subtitle">浏览预设模板，获取创作灵感</p>
+      </div>
+
+      {/* 搜索和筛选栏 */}
+      <div className="gallery-toolbar">
+        <div className="search-box">
+          <svg className="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="11" cy="11" r="8"/>
+            <path d="M21 21l-4.35-4.35"/>
+          </svg>
+          <input
+            type="text"
+            placeholder="搜索模板..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="search-input"
+          />
+        </div>
+
+        <div className="filter-tabs">
+          <button
+            className={`filter-tab ${!showFavorites && !showMyWorks ? 'active' : ''}`}
+            onClick={() => { setShowFavorites(false); setShowMyWorks(false) }}
+          >
+            全部模板
+          </button>
+          <button
+            className={`filter-tab ${showFavorites ? 'active' : ''}`}
+            onClick={() => { setShowFavorites(!showFavorites); setShowMyWorks(false) }}
+          >
+            我的收藏 ({favorites.length})
+          </button>
+          <button
+            className={`filter-tab ${showMyWorks ? 'active' : ''}`}
+            onClick={() => { setShowMyWorks(!showMyWorks); setShowFavorites(false) }}
+          >
+            我的作品 ({savedWorks.length})
+          </button>
+        </div>
+      </div>
+
+      {/* 分类标签 */}
+      <div className="category-bar">
+        <div className="category-group">
+          <span className="category-label">分类：</span>
+          {CATEGORIES.map(cat => (
+            <button
+              key={cat}
+              className={`category-btn ${selectedCategory === cat ? 'active' : ''}`}
+              onClick={() => setSelectedCategory(cat)}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+        <div className="difficulty-group">
+          <span className="category-label">难度：</span>
+          {DIFFICULTIES.map(diff => (
+            <button
+              key={diff}
+              className={`difficulty-btn ${selectedDifficulty === diff ? 'active' : ''}`}
+              onClick={() => setSelectedDifficulty(diff)}
+              style={{ '--diff-color': getDifficultyColor(diff) }}
+            >
+              {diff}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 模板网格 */}
+      <div className="gallery-content">
+        {showMyWorks ? (
+          <div className="works-section">
+            <h2 className="section-title">我的作品</h2>
+            {savedWorks.length === 0 ? (
+              <div className="empty-state">
+                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <rect x="3" y="3" width="18" height="18" rx="2"/>
+                  <path d="M3 9h18"/>
+                  <path d="M9 21V9"/>
+                </svg>
+                <p>还没有保存的作品</p>
+                <span>在画布上创作后，点击导出按钮保存作品</span>
+              </div>
+            ) : (
+              <div className="works-grid">
+                {savedWorks.map((work, index) => (
+                  <div key={index} className="work-card">
+                    <div className="work-thumbnail">
+                      <canvas
+                        width={work.gridSize * CELL_SIZE}
+                        height={work.gridSize * CELL_SIZE}
+                        style={{ imageRendering: 'pixelated' }}
+                        ref={(canvas) => {
+                          if (!canvas) return
+                          const ctx = canvas.getContext('2d')
+                          const palette = getPalette(work.paletteId || 'perler')
+                          ctx.fillStyle = '#ffffff'
+                          ctx.fillRect(0, 0, work.gridSize * CELL_SIZE, work.gridSize * CELL_SIZE)
+                          for (let y = 0; y < work.gridSize; y++) {
+                            for (let x = 0; x < work.gridSize; x++) {
+                              const hex = resolveToHex(work.canvasData[y]?.[x], palette)
+                              if (hex) {
+                                ctx.fillStyle = hex
+                                ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE - 1, CELL_SIZE - 1)
+                              }
+                            }
+                          }
+                        }}
+                      />
+                    </div>
+                    <div className="work-info">
+                      <span className="work-name">作品 {index + 1}</span>
+                      <span className="work-size">{work.gridSize} x {work.gridSize}</span>
+                    </div>
+                    <div className="work-actions">
+                      <button
+                        className="work-btn load"
+                        onClick={() => onLoadTemplate(work.canvasData, work.gridSize)}
+                      >
+                        加载
+                      </button>
+                      <button
+                        className="work-btn delete"
+                        onClick={() => {
+                          const newWorks = savedWorks.filter((_, i) => i !== index)
+                          onSaveWork(newWorks)
+                        }}
+                      >
+                        删除
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : filteredTemplates.length === 0 ? (
+          <div className="empty-state">
+            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <circle cx="11" cy="11" r="8"/>
+              <path d="M21 21l-4.35-4.35"/>
+            </svg>
+            <p>没有找到匹配的模板</p>
+            <span>尝试调整搜索条件或筛选器</span>
+          </div>
+        ) : (
+          <div className="templates-grid">
+            {filteredTemplates.map(template => (
+              <div
+                key={template.id}
+                className="template-card"
+                onClick={() => onLoadTemplate(template.pattern, template.size)}
+              >
+                <div className="template-thumbnail">
+                  <ThumbnailCanvas pattern={template.pattern} size={template.size} />
+                  <button
+                    className={`favorite-btn ${favorites.includes(template.id) ? 'active' : ''}`}
+                    onClick={(e) => toggleFavorite(template.id, e)}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill={favorites.includes(template.id) ? '#E53935' : 'none'} stroke="#E53935" strokeWidth="2">
+                      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                    </svg>
+                  </button>
+                </div>
+                <div className="template-info">
+                  <h3 className="template-name">{template.name}</h3>
+                  <div className="template-meta">
+                    <span className="template-size">{template.size} x {template.size}</span>
+                    <span
+                      className="template-difficulty"
+                      style={{ '--diff-color': getDifficultyColor(template.difficulty) }}
+                    >
+                      {template.difficulty}
+                    </span>
+                  </div>
+                  <span className="template-category">{template.category}</span>
+                </div>
+                <div className="template-colors">
+                  {template.colors.map((color, i) => (
+                    <span
+                      key={i}
+                      className="color-dot"
+                      style={{ backgroundColor: color }}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <style>{`
+        .gallery-page {
+          max-width: 1200px;
+          margin: 0 auto;
+          padding: 24px;
+        }
+        .gallery-header {
+          text-align: center;
+          margin-bottom: 32px;
+        }
+        .gallery-title {
+          font-size: 28px;
+          font-weight: 600;
+          margin-bottom: 8px;
+        }
+        .gallery-subtitle {
+          color: var(--text-secondary);
+          font-size: 14px;
+        }
+        .gallery-toolbar {
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+          margin-bottom: 20px;
+        }
+        .search-box {
+          position: relative;
+          max-width: 400px;
+          margin: 0 auto;
+          width: 100%;
+        }
+        .search-icon {
+          position: absolute;
+          left: 12px;
+          top: 50%;
+          transform: translateY(-50%);
+          color: var(--text-muted);
+        }
+        .search-input {
+          width: 100%;
+          padding: 12px 12px 12px 40px;
+          border: 2px solid var(--border-color);
+          border-radius: 8px;
+          font-size: 14px;
+          background: var(--bg-secondary);
+          transition: border-color 0.2s;
+        }
+        .search-input:focus {
+          border-color: var(--accent);
+          background: var(--bg-primary);
+        }
+        .filter-tabs {
+          display: flex;
+          gap: 8px;
+          justify-content: center;
+          flex-wrap: wrap;
+        }
+        .filter-tab {
+          padding: 8px 16px;
+          border: 2px solid var(--border-color);
+          border-radius: 6px;
+          font-size: 13px;
+          background: transparent;
+          color: var(--text-secondary);
+          transition: all 0.2s;
+        }
+        .filter-tab:hover {
+          border-color: var(--accent);
+        }
+        .filter-tab.active {
+          background: var(--accent);
+          border-color: var(--accent);
+          color: white;
+        }
+        .category-bar {
+          display: flex;
+          gap: 24px;
+          flex-wrap: wrap;
+          margin-bottom: 24px;
+          padding: 16px;
+          background: var(--bg-secondary);
+          border-radius: 8px;
+        }
+        .category-group, .difficulty-group {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+        .category-label {
+          font-size: 12px;
+          color: var(--text-secondary);
+          font-weight: 600;
+        }
+        .category-btn, .difficulty-btn {
+          padding: 6px 12px;
+          border: 1px solid var(--border-color);
+          border-radius: 4px;
+          font-size: 12px;
+          background: var(--bg-primary);
+          color: var(--text-secondary);
+          transition: all 0.2s;
+        }
+        .category-btn:hover, .difficulty-btn:hover {
+          border-color: var(--accent);
+        }
+        .category-btn.active, .difficulty-btn.active {
+          background: var(--accent);
+          border-color: var(--accent);
+          color: white;
+        }
+        .difficulty-btn.active {
+          background: var(--diff-color);
+          border-color: var(--diff-color);
+        }
+        .gallery-content {
+          min-height: 400px;
+        }
+        .templates-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+          gap: 20px;
+        }
+        .template-card {
+          background: var(--bg-primary);
+          border: 2px solid var(--border-color);
+          border-radius: 12px;
+          overflow: hidden;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+        .template-card:hover {
+          border-color: var(--accent);
+          transform: translateY(-4px);
+          box-shadow: 0 8px 24px var(--shadow);
+        }
+        .template-thumbnail {
+          position: relative;
+          background: white;
+          padding: 16px;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          min-height: 140px;
+        }
+        .template-thumbnail canvas {
+          image-rendering: pixelated;
+        }
+        .favorite-btn {
+          position: absolute;
+          top: 8px;
+          right: 8px;
+          width: 32px;
+          height: 32px;
+          border-radius: 50%;
+          background: white;
+          border: none;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+          transition: transform 0.2s;
+        }
+        .favorite-btn:hover {
+          transform: scale(1.1);
+        }
+        .template-info {
+          padding: 12px 16px;
+        }
+        .template-name {
+          font-size: 16px;
+          font-weight: 600;
+          margin-bottom: 4px;
+        }
+        .template-meta {
+          display: flex;
+          gap: 8px;
+          align-items: center;
+          margin-bottom: 4px;
+        }
+        .template-size {
+          font-size: 12px;
+          color: var(--text-muted);
+        }
+        .template-difficulty {
+          font-size: 11px;
+          padding: 2px 8px;
+          border-radius: 10px;
+          background: var(--diff-color);
+          color: white;
+        }
+        .template-category {
+          font-size: 11px;
+          color: var(--text-muted);
+        }
+        .template-colors {
+          display: flex;
+          gap: 4px;
+          padding: 0 16px 12px;
+        }
+        .color-dot {
+          width: 12px;
+          height: 12px;
+          border-radius: 50%;
+          border: 1px solid rgba(0,0,0,0.1);
+        }
+        .empty-state {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          padding: 60px 20px;
+          color: var(--text-muted);
+        }
+        .empty-state svg {
+          margin-bottom: 16px;
+          opacity: 0.5;
+        }
+        .empty-state p {
+          font-size: 16px;
+          margin-bottom: 4px;
+        }
+        .empty-state span {
+          font-size: 13px;
+        }
+        .section-title {
+          font-size: 20px;
+          margin-bottom: 20px;
+        }
+        .works-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+          gap: 16px;
+        }
+        .work-card {
+          background: var(--bg-secondary);
+          border-radius: 8px;
+          overflow: hidden;
+        }
+        .work-thumbnail {
+          background: white;
+          padding: 12px;
+          display: flex;
+          justify-content: center;
+        }
+        .work-info {
+          padding: 12px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+        .work-name {
+          font-weight: 600;
+          font-size: 14px;
+        }
+        .work-size {
+          font-size: 12px;
+          color: var(--text-muted);
+        }
+        .work-actions {
+          display: flex;
+          gap: 8px;
+          padding: 0 12px 12px;
+        }
+        .work-btn {
+          flex: 1;
+          padding: 8px;
+          border: none;
+          border-radius: 4px;
+          font-size: 12px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+        .work-btn.load {
+          background: var(--accent);
+          color: white;
+        }
+        .work-btn.load:hover {
+          background: #333;
+        }
+        .work-btn.delete {
+          background: var(--bg-tertiary);
+          color: var(--text-secondary);
+        }
+        .work-btn.delete:hover {
+          background: #ff3b30;
+          color: white;
+        }
+      `}</style>
+    </div>
+  )
+}
+
+// 缩略图组件（使用独立组件避免 useRef 混乱）
+function ThumbnailCanvas({ pattern, size }) {
+  const canvasRef = useRef(null)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas || !pattern) return
+
+    const ctx = canvas.getContext('2d')
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, size * CELL_SIZE, size * CELL_SIZE)
+
+    for (let y = 0; y < size && y < pattern.length; y++) {
+      for (let x = 0; x < size && pattern[y] && x < pattern[y].length; x++) {
+        if (pattern[y][x]) {
+          ctx.fillStyle = pattern[y][x]
+          ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE - 1, CELL_SIZE - 1)
+        }
+      }
+    }
+  }, [pattern, size])
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={size * CELL_SIZE}
+      height={size * CELL_SIZE}
+      style={{ imageRendering: 'pixel' }}
+    />
+  )
+}

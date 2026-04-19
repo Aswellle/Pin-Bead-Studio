@@ -1,0 +1,179 @@
+{
+  "app": {
+    "title": "ビードスタジオ",
+    "subtitle": "次世代ビードパターンデザイン工具"
+  },
+  "nav": {
+    "canvas": "キャンバス",
+    "gallery": "ギャラリー",
+    "tutorials": "チュートリアル"
+  },
+  "palette": {
+    "title": "カラーパレット",
+    "brand": {
+      "perler": "Perler (アメリカ)",
+      "hama": "Hama (デンマーク)",
+      "artkal": "Artkal (中国/オランダ)"
+    },
+    "search": "カラーを検索...",
+    "recent": "最近使用",
+    "colors": "色"
+  },
+  "quantizer": {
+    "title": "画像をビードに",
+    "dragDrop": "画像をここにドロップ",
+    "or": "または",
+    "browse": "ファイルを参照",
+    "paste": "画像を貼り付け (Ctrl+V)",
+    "changeImage": "画像を変更",
+    "settings": "量子化設定",
+    "palette": "対象パレット",
+    "gridSize": "キャンバスサイズ",
+    "maxColors": "最大カラー数",
+    "standard": "標準",
+    "large": "大",
+    "extraLarge": "特大",
+    "processing": "処理中",
+    "preview": "プレビュー",
+    "colorsUsed": "使用カラー",
+    "generate": "パターンを生成",
+    "reset": "リセット",
+    "applyToCanvas": "キャンバスに適用"
+  },
+  "canvas": {
+    "size": "キャンバスサイズ",
+    "tool": {
+      "pencil": "鉛筆",
+      "eraser": "消しゴム",
+      "fill": "塗りつぶし"
+    }
+  },
+  "export": {
+    "title": "エクスポート",
+    "png": "PNG 画像",
+    "svg": "SVG ベクター",
+    "text": "パターン テキスト"
+  },
+  "gallery": {
+    "title": "テンプレートギャラリー",
+    "search": "テンプレートを検索...",
+    "categories": {
+      "all": "すべて",
+      "animal": "動物",
+      "food": "食べ物",
+      "icon": "アイコン",
+      "holiday": "祝日",
+      "character": "キャラクター"
+    },
+    "difficulty": {
+      "all": "すべて",
+      "easy": "簡単",
+      "medium": "中級",
+      "hard": "上級"
+    },
+    "favorites": "お気に入り",
+    "myWorks": "マイ作品",
+    "loadTemplate": "テンプレートを読み込む",
+    "addToFavorites": "お気に入りに追加",
+    "removeFromFavorites": "お気に入りから削除"
+  },
+  "tutorials": {
+    "title": "チュートリアル",
+    "gettingStarted": "入門",
+    "whatIsBead": "ビードとは",
+    "basicTools": "基本工具",
+    "firstProject": "最初のプロジェクト：ハートの作り方",
+    "advancedTips": "応用テクニック",
+    "gradientEffect": "グラデーション効果の作り方",
+    "complexPatterns": "複雑なパターンの分割制作",
+    "ironingTips": "アイロン技巧と注意点は",
+    "templateUsage": "テンプレートの使用",
+    "importTemplate": "テンプレートをインポート",
+    "modifyPattern": "既存のパターンを修正",
+    "customColors": "カスタムカラーの置換",
+    "faq": "よくある質問",
+    "beadArrangement": "ビード配置技巧",
+    "ironingGuide": "アイロン温度ガイド",
+    "storageTips": "作品の保存方法",
+    "progress": "進捗",
+    "completed": "完了",
+    "markComplete": "完了としてマーク"
+  },
+  "settings": {
+    "title": "設定",
+    "language": "言語",
+    "theme": "テーマ",
+    "themes": {
+      "light": "ライト",
+      "dark": "ダーク",
+      "auto": "システムに従う"
+    },
+    "autoSave": "自動保存",
+    "showGrid": "グリッド線を表示",
+    "beadShape": "ビード形状",
+    "beadShapes": {
+      "circle": "丸い",
+      "square": "四角い"
+    }
+  },
+  "auth": {
+    "login": "ログイン",
+    "register": "登録",
+    "logout": "ログアウト",
+    "email": "メールアドレス",
+    "password": "パスワード",
+    "confirmPassword": "パスワードを確認",
+    "welcomeBack": "おかえりなさい！",
+    "createAccount": "新規アカウント作成",
+    "noAccount": "アカウントをお持ちでない方？",
+    "hasAccount": "すでにアカウントをお持ちの方？"
+  },
+  "common": {
+    "save": "保存",
+    "cancel": "キャンセル",
+    "clear": "クリア",
+    "undo": "元に戻す",
+    "redo": "やり直し",
+    "delete": "削除",
+    "edit": "編集",
+    "confirm": "確認",
+    "loading": "読み込み中...",
+    "error": "エラー",
+    "success": "成功",
+    "close": "閉じる",
+    "back": "戻る",
+    "next": "次へ",
+    "previous": "前へ"
+  },
+  "header": {
+    "imageToBead": "画像をビードに"
+  },
+  "tools": {
+    "title": "工具",
+    "import": "インポート",
+    "imageToBead": "画像をビードに",
+    "canvasSize": "キャンバスサイズ",
+    "quickActions": "クイックアクション",
+    "smallIcon": "小アイコン",
+    "standard": "標準",
+    "large": "大",
+    "extraLarge": "特大"
+  },
+  "exportPanel": {
+    "title": "パターンをエクスポート",
+    "totalBeads": "総ビード数",
+    "colorsUsed": "使用カラー",
+    "colorStats": "カラー統計"
+  },
+  "colorPalette": {
+    "title": "カラーパレット",
+    "perlerColors": "Perler カラーリスト"
+  },
+  "errors": {
+    "invalidEmail": "有効なメールアドレスを入力してください",
+    "passwordTooShort": "パスワードは6文字以上必要です",
+    "passwordMismatch": "パスワードが一致しません",
+    "uploadFailed": "アップロードに失敗しました",
+    "quantizationFailed": "量子化に失敗しました"
+  }
+}
