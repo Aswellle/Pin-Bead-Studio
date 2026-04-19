@@ -14,10 +14,12 @@ export default function Canvas({
   const containerRef = useRef(null)
   const [isDrawing, setIsDrawing] = useState(false)
   const [hoverCell, setHoverCell] = useState(null)
-  const [mode, setMode] = useState('draw') // 'draw' | 'gesture'
+  const [isPanning, setIsPanning] = useState(false)
   const lastDrawTouchRef = useRef(null)
-  const touchStartRef = useRef(null) // { x, y } initial touch position
-  const touchMovedRef = useRef(false) // true if touch moved beyond threshold
+  const touchStartRef = useRef(null)
+  const touchMovedRef = useRef(false)
+  const panStartRef = useRef(null)
+  const panStartTransformRef = useRef(null)
 
   const CELL_SIZE = 16
   const cols = gridWidth || gridSize
@@ -25,18 +27,17 @@ export default function Canvas({
   const canvasWidth = cols * CELL_SIZE
   const canvasHeight = rows * CELL_SIZE
 
-  const { ref: gestureRef, transform, resetTransform, setTransform, isGestureActive } = useGestures({
+  const { ref: gestureRef, transform, resetTransform, setTransform } = useGestures({
     minScale: 0.3,
     maxScale: 5,
     friction: 0.88,
     bounceIntensity: 0.2,
-    minX: -canvasWidth,
-    maxX: canvasWidth,
-    minY: -canvasHeight,
-    maxY: canvasHeight,
+    minX: -canvasWidth * 2,
+    maxX: canvasWidth * 2,
+    minY: -canvasHeight * 2,
+    maxY: canvasHeight * 2,
   })
 
-  // 合并 refs
   const setContainerRef = useCallback((element) => {
     containerRef.current = element
     gestureRef.current = element
@@ -103,6 +104,18 @@ export default function Canvas({
     return null
   }, [cols, rows])
 
+  const isOverCanvas = useCallback((clientX, clientY) => {
+    const canvas = canvasRef.current
+    if (!canvas) return false
+    const rect = canvas.getBoundingClientRect()
+    return (
+      clientX >= rect.left &&
+      clientX <= rect.right &&
+      clientY >= rect.top &&
+      clientY <= rect.bottom
+    )
+  }, [])
+
   const drawCell = useCallback((x, y) => {
     if (!canvasData) return
 
@@ -138,12 +151,41 @@ export default function Canvas({
     onCanvasChange(newData)
   }, [canvasData, selectedColor, tool, cols, rows, onCanvasChange])
 
-  // 触控处理 - 区分绘制和手势
+  // ==================== PC 端鼠标拖拽平移 ====================
+  const handleContainerMouseDown = useCallback((e) => {
+    if (e.button !== 0) return
+
+    // 检查是否在 canvas 区域外
+    if (!isOverCanvas(e.clientX, e.clientY)) {
+      e.preventDefault()
+      setIsPanning(true)
+      panStartRef.current = { x: e.clientX, y: e.clientY }
+      panStartTransformRef.current = { x: transform.x, y: transform.y }
+    }
+  }, [isOverCanvas, transform])
+
+  const handleContainerMouseMove = useCallback((e) => {
+    if (!isPanning || !panStartRef.current) return
+
+    const dx = e.clientX - panStartRef.current.x
+    const dy = e.clientY - panStartRef.current.y
+
+    setTransform(prev => ({
+      ...prev,
+      x: panStartTransformRef.current.x + dx,
+      y: panStartTransformRef.current.y + dy,
+    }))
+  }, [isPanning, setTransform])
+
+  const handleContainerMouseUp = useCallback(() => {
+    setIsPanning(false)
+    panStartRef.current = null
+    panStartTransformRef.current = null
+  }, [])
+
+  // ==================== 触控处理 ====================
   const handleTouchStart = useCallback((e) => {
-    // Two-finger gesture: let useGestures handle it, don't draw
     if (e.touches.length === 2) {
-      setMode('gesture')
-      setIsDrawing(false)
       touchStartRef.current = null
       touchMovedRef.current = false
       return
@@ -153,91 +195,100 @@ export default function Canvas({
       const touch = e.touches[0]
       const pos = getGridPos(touch.clientX, touch.clientY)
 
-      if (pos) {
-        // Track initial touch position for tap vs drag detection
-        touchStartRef.current = { x: touch.clientX, y: touch.clientY, gridPos: pos }
-        touchMovedRef.current = false
-        setMode('draw')
-        setIsDrawing(true)
-        lastDrawTouchRef.current = touch
-        // Don't draw immediately - wait for movement threshold check in handleTouchMove
+      touchStartRef.current = { x: touch.clientX, y: touch.clientY, gridPos: pos }
+      touchMovedRef.current = false
+
+      if (!pos) {
+        // 触碰在 canvas 外 → 开始平移
+        panStartRef.current = { x: touch.clientX, y: touch.clientY }
+        panStartTransformRef.current = { x: transform.x, y: transform.y }
       }
     }
-  }, [getGridPos])
+  }, [getGridPos, transform])
 
   const handleTouchMove = useCallback((e) => {
-    // Two-finger gesture: let useGestures handle it, don't draw
     if (e.touches.length === 2) {
+      panStartRef.current = null
+      panStartTransformRef.current = null
       return
     }
 
-    if (e.touches.length === 1 && isDrawing && mode === 'draw') {
-      e.preventDefault()
+    if (e.touches.length === 1) {
       const touch = e.touches[0]
+
+      // 如果有 panStartRef，说明在 canvas 外，直接平移
+      if (panStartRef.current) {
+        e.preventDefault()
+        const dx = touch.clientX - panStartRef.current.x
+        const dy = touch.clientY - panStartRef.current.y
+
+        setTransform(prev => ({
+          ...prev,
+          x: panStartTransformRef.current.x + dx,
+          y: panStartTransformRef.current.y + dy,
+        }))
+        return
+      }
+
+      // 在 canvas 内
       const pos = getGridPos(touch.clientX, touch.clientY)
       setHoverCell(pos)
 
-      // Check if touch has moved beyond the threshold (indicating a drag/pan, not a tap)
       if (touchStartRef.current && !touchMovedRef.current) {
         const dx = touch.clientX - touchStartRef.current.x
         const dy = touch.clientY - touchStartRef.current.y
         const distance = Math.sqrt(dx * dx + dy * dy)
 
-        // If moved more than 10px, switch to pan mode - don't draw
         if (distance > 10) {
           touchMovedRef.current = true
-          setMode('gesture')
+          // 切换到平移模式
+          panStartRef.current = { x: touch.clientX, y: touch.clientY }
+          panStartTransformRef.current = { x: transform.x, y: transform.y }
         }
       }
 
-      // Only draw if touch hasn't moved beyond threshold (actual tap)
-      if (pos && !touchMovedRef.current) {
-        drawCell(pos.x, pos.y)
+      // 在 canvas 内移动 >10px 后，开始平移
+      if (touchMovedRef.current && panStartRef.current) {
+        e.preventDefault()
+        const dx = touch.clientX - panStartRef.current.x
+        const dy = touch.clientY - panStartRef.current.y
+
+        setTransform(prev => ({
+          ...prev,
+          x: panStartTransformRef.current.x + dx,
+          y: panStartTransformRef.current.y + dy,
+        }))
       }
     }
-  }, [isDrawing, mode, getGridPos, drawCell])
+  }, [getGridPos, setTransform, transform])
 
   const handleTouchEnd = useCallback((e) => {
     if (e.touches.length === 0) {
-      // Handle tap: if touchStart exists and touch never moved, draw the cell
-      if (touchStartRef.current && !touchMovedRef.current) {
+      // 如果是点击（在 canvas 内且移动 < 10px），绘制格子
+      if (touchStartRef.current && !touchMovedRef.current && touchStartRef.current.gridPos) {
         const { gridPos } = touchStartRef.current
-        if (gridPos) {
-          drawCell(gridPos.x, gridPos.y)
-        }
+        drawCell(gridPos.x, gridPos.y)
       }
 
       setIsDrawing(false)
-      setMode('draw')
       lastDrawTouchRef.current = null
       touchStartRef.current = null
       touchMovedRef.current = false
+      panStartRef.current = null
+      panStartTransformRef.current = null
     }
   }, [drawCell])
 
   const handleTouchCancel = useCallback(() => {
     setIsDrawing(false)
-    setMode('draw')
     lastDrawTouchRef.current = null
     touchStartRef.current = null
     touchMovedRef.current = false
+    panStartRef.current = null
+    panStartTransformRef.current = null
   }, [])
 
-  // 双击重置缩放
-  const handleDoubleClick = useCallback(() => {
-    resetTransform()
-  }, [resetTransform])
-
-  // 滚轮缩放（桌面端）
-  const handleWheel = useCallback((e) => {
-    e.preventDefault()
-    const delta = e.deltaY > 0 ? 0.9 : 1.1
-    setTransform(prev => ({
-      ...prev,
-      scale: Math.max(0.3, Math.min(5, prev.scale * delta))
-    }))
-  }, [setTransform])
-
+  // ==================== 桌面端鼠标在 canvas 上绘制 ====================
   const handleMouseDown = useCallback((e) => {
     if (e.button !== 0) return
     const pos = getGridPos(e.clientX, e.clientY)
@@ -265,15 +316,25 @@ export default function Canvas({
     setIsDrawing(false)
   }, [])
 
-  // 构建 transform 样式
+  // 双击重置
+  const handleDoubleClick = useCallback(() => {
+    resetTransform()
+  }, [resetTransform])
+
+  // 滚轮缩放
+  const handleWheel = useCallback((e) => {
+    e.preventDefault()
+    const delta = e.deltaY > 0 ? 0.9 : 1.1
+    setTransform(prev => ({
+      ...prev,
+      scale: Math.max(0.3, Math.min(5, prev.scale * delta))
+    }))
+  }, [setTransform])
+
   const transformStyle = {
     transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`,
     transformOrigin: 'center center',
     willChange: 'transform',
-  }
-
-  if (transform.originX !== undefined) {
-    transformStyle.transformOrigin = `${transform.originX}px ${transform.originY}px`
   }
 
   return (
@@ -285,7 +346,7 @@ export default function Canvas({
         <button
           className="reset-btn"
           onClick={resetTransform}
-          title="双击或点击重置缩放"
+          title="双击或点击重置"
         >
           重置
         </button>
@@ -296,6 +357,11 @@ export default function Canvas({
         ref={setContainerRef}
         onWheel={handleWheel}
         onDoubleClick={handleDoubleClick}
+        onMouseDown={handleContainerMouseDown}
+        onMouseMove={handleContainerMouseMove}
+        onMouseUp={handleContainerMouseUp}
+        onMouseLeave={handleContainerMouseUp}
+        style={{ cursor: isPanning ? 'grabbing' : 'default' }}
       >
         <div className="canvas-inner" style={transformStyle}>
           <canvas
@@ -311,7 +377,7 @@ export default function Canvas({
             onTouchEnd={handleTouchEnd}
             onTouchCancel={handleTouchCancel}
             style={{
-              cursor: isDrawing ? 'grabbing' : tool === 'eraser' ? 'crosshair' : 'crosshair',
+              cursor: isDrawing ? 'grabbing' : 'crosshair',
               imageRendering: 'pixelated',
               touchAction: 'none',
               display: 'block',
@@ -364,7 +430,9 @@ export default function Canvas({
           align-items: center;
           overflow: visible;
           touch-action: none;
-          padding: 40px;
+          padding: 60px;
+          user-select: none;
+          -webkit-user-select: none;
         }
 
         .canvas-inner {
@@ -375,12 +443,7 @@ export default function Canvas({
             0 4px 6px -1px rgba(0, 0, 0, 0.1),
             0 2px 4px -2px rgba(0, 0, 0, 0.1),
             0 0 0 1px rgba(0, 0, 0, 0.05);
-          transition: transform 0.1s cubic-bezier(0.34, 1.56, 0.64, 1);
-          position: relative;
-        }
-
-        .canvas-inner.settling {
-          transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+          transition: transform 0.05s ease-out;
         }
       `}</style>
     </div>
