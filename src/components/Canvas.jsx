@@ -16,6 +16,8 @@ export default function Canvas({
   const [hoverCell, setHoverCell] = useState(null)
   const [mode, setMode] = useState('draw') // 'draw' | 'gesture'
   const lastDrawTouchRef = useRef(null)
+  const touchStartRef = useRef(null) // { x, y } initial touch position
+  const touchMovedRef = useRef(false) // true if touch moved beyond threshold
 
   const CELL_SIZE = 16
   const cols = gridWidth || gridSize
@@ -138,9 +140,12 @@ export default function Canvas({
 
   // 触控处理 - 区分绘制和手势
   const handleTouchStart = useCallback((e) => {
+    // Two-finger gesture: let useGestures handle it, don't draw
     if (e.touches.length === 2) {
       setMode('gesture')
       setIsDrawing(false)
+      touchStartRef.current = null
+      touchMovedRef.current = false
       return
     }
 
@@ -149,15 +154,19 @@ export default function Canvas({
       const pos = getGridPos(touch.clientX, touch.clientY)
 
       if (pos) {
+        // Track initial touch position for tap vs drag detection
+        touchStartRef.current = { x: touch.clientX, y: touch.clientY, gridPos: pos }
+        touchMovedRef.current = false
         setMode('draw')
         setIsDrawing(true)
         lastDrawTouchRef.current = touch
-        drawCell(pos.x, pos.y)
+        // Don't draw immediately - wait for movement threshold check in handleTouchMove
       }
     }
-  }, [getGridPos, drawCell])
+  }, [getGridPos])
 
   const handleTouchMove = useCallback((e) => {
+    // Two-finger gesture: let useGestures handle it, don't draw
     if (e.touches.length === 2) {
       return
     }
@@ -168,7 +177,21 @@ export default function Canvas({
       const pos = getGridPos(touch.clientX, touch.clientY)
       setHoverCell(pos)
 
-      if (pos) {
+      // Check if touch has moved beyond the threshold (indicating a drag/pan, not a tap)
+      if (touchStartRef.current && !touchMovedRef.current) {
+        const dx = touch.clientX - touchStartRef.current.x
+        const dy = touch.clientY - touchStartRef.current.y
+        const distance = Math.sqrt(dx * dx + dy * dy)
+
+        // If moved more than 10px, switch to pan mode - don't draw
+        if (distance > 10) {
+          touchMovedRef.current = true
+          setMode('gesture')
+        }
+      }
+
+      // Only draw if touch hasn't moved beyond threshold (actual tap)
+      if (pos && !touchMovedRef.current) {
         drawCell(pos.x, pos.y)
       }
     }
@@ -176,16 +199,28 @@ export default function Canvas({
 
   const handleTouchEnd = useCallback((e) => {
     if (e.touches.length === 0) {
+      // Handle tap: if touchStart exists and touch never moved, draw the cell
+      if (touchStartRef.current && !touchMovedRef.current) {
+        const { gridPos } = touchStartRef.current
+        if (gridPos) {
+          drawCell(gridPos.x, gridPos.y)
+        }
+      }
+
       setIsDrawing(false)
       setMode('draw')
       lastDrawTouchRef.current = null
+      touchStartRef.current = null
+      touchMovedRef.current = false
     }
-  }, [])
+  }, [drawCell])
 
   const handleTouchCancel = useCallback(() => {
     setIsDrawing(false)
     setMode('draw')
     lastDrawTouchRef.current = null
+    touchStartRef.current = null
+    touchMovedRef.current = false
   }, [])
 
   // 双击重置缩放
