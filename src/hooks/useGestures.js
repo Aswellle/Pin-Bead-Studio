@@ -60,9 +60,17 @@ export function useGestures({
     const scaledMinY = minY * transform.scale
     const scaledMaxY = maxY * transform.scale
 
-    if (x < scaledMinX) return scaledMinX + (x - scaledMinX) * bounceIntensity
-    if (x > scaledMaxX) return scaledMaxX + (x - scaledMaxX) * bounceIntensity
-    return x
+    const clampedX =
+      x < scaledMinX ? scaledMinX - (scaledMinX - x) * bounceIntensity :
+      x > scaledMaxX ? scaledMaxX + (x - scaledMaxX) * bounceIntensity :
+      x
+
+    const clampedY =
+      y < scaledMinY ? scaledMinY - (scaledMinY - y) * bounceIntensity :
+      y > scaledMaxY ? scaledMaxY + (y - scaledMaxY) * bounceIntensity :
+      y
+
+    return { x: clampedX, y: clampedY }
   }, [minX, maxX, minY, maxY, transform.scale, bounceIntensity])
 
   const startMomentum = useCallback(() => {
@@ -76,9 +84,8 @@ export function useGestures({
       }
 
       setTransform(prev => {
-        const newX = clampPosition(prev.x + x, prev.y)
-        const newY = clampPosition(prev.x, prev.y + y)
-        return { ...prev, x: newX, y: newY }
+        const newPos = clampPosition(prev.x + x, prev.y + y)
+        return { ...prev, x: newPos.x, y: newPos.y }
       })
 
       velocityRef.current = {
@@ -171,11 +178,10 @@ export function useGestures({
           }
         }
 
-        setTransform(prev => ({
-          ...prev,
-          x: clampPosition(prev.x + dx, prev.y + dy),
-          y: clampPosition(prev.x, prev.y + dy),
-        }))
+        setTransform(prev => {
+          const newPos = clampPosition(prev.x + dx, prev.y + dy)
+          return { ...prev, x: newPos.x, y: newPos.y }
+        })
 
         if (onPan) {
           onPan({ x: dx, y: dy })
@@ -192,13 +198,17 @@ export function useGestures({
     if (remainingTouches === 0) {
       setIsGestureActive(false)
 
-      setTransform(prev => ({
-        ...prev,
-        scale: clampScale(prev.scale),
-        x: clampPosition(prev.x, prev.y),
-        originX: undefined,
-        originY: undefined,
-      }))
+      setTransform(prev => {
+        const newPos = clampPosition(prev.x, prev.y)
+        return {
+          ...prev,
+          scale: clampScale(prev.scale),
+          x: newPos.x,
+          y: newPos.y,
+          originX: undefined,
+          originY: undefined,
+        }
+      })
 
       if (Math.abs(velocityRef.current.x) > 1 || Math.abs(velocityRef.current.y) > 1) {
         startMomentum()

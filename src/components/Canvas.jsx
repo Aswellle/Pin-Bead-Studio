@@ -27,6 +27,27 @@ export default function Canvas({
   const canvasWidth = cols * CELL_SIZE
   const canvasHeight = rows * CELL_SIZE
 
+  // 计算容器内可用区域（减去左右 padding）
+  const containerPadding = 60
+  const availableW = containerRef.current
+    ? containerRef.current.clientWidth - containerPadding * 2
+    : 800
+  const availableH = containerRef.current
+    ? containerRef.current.clientHeight - containerPadding * 2
+    : 600
+
+  // 根据当前 scale 计算并返回钳位后的坐标
+  const applyClamp = useCallback((x, y, scale) => {
+    const scaledGridW = canvasWidth * scale
+    const scaledGridH = canvasHeight * scale
+    const maxPanX = Math.max(0, (scaledGridW - availableW) / 2)
+    const maxPanY = Math.max(0, (scaledGridH - availableH) / 2)
+    return {
+      x: Math.max(-maxPanX, Math.min(maxPanX, x)),
+      y: Math.max(-maxPanY, Math.min(maxPanY, y)),
+    }
+  }, [canvasWidth, canvasHeight, availableW, availableH])
+
   const { ref: gestureRef, transform, resetTransform, setTransform } = useGestures({
     minScale: 0.3,
     maxScale: 5,
@@ -170,12 +191,16 @@ export default function Canvas({
     const dx = e.clientX - panStartRef.current.x
     const dy = e.clientY - panStartRef.current.y
 
+    const rawX = panStartTransformRef.current.x + dx
+    const rawY = panStartTransformRef.current.y + dy
+    const clamped = applyClamp(rawX, rawY, transform.scale)
+
     setTransform(prev => ({
       ...prev,
-      x: panStartTransformRef.current.x + dx,
-      y: panStartTransformRef.current.y + dy,
+      x: clamped.x,
+      y: clamped.y,
     }))
-  }, [isPanning, setTransform])
+  }, [isPanning, setTransform, transform, applyClamp])
 
   const handleContainerMouseUp = useCallback(() => {
     setIsPanning(false)
@@ -222,10 +247,14 @@ export default function Canvas({
         const dx = touch.clientX - panStartRef.current.x
         const dy = touch.clientY - panStartRef.current.y
 
+        const rawX = panStartTransformRef.current.x + dx
+        const rawY = panStartTransformRef.current.y + dy
+        const clamped = applyClamp(rawX, rawY, transform.scale)
+
         setTransform(prev => ({
           ...prev,
-          x: panStartTransformRef.current.x + dx,
-          y: panStartTransformRef.current.y + dy,
+          x: clamped.x,
+          y: clamped.y,
         }))
         return
       }
@@ -253,14 +282,18 @@ export default function Canvas({
         const dx = touch.clientX - panStartRef.current.x
         const dy = touch.clientY - panStartRef.current.y
 
+        const rawX = panStartTransformRef.current.x + dx
+        const rawY = panStartTransformRef.current.y + dy
+        const clamped = applyClamp(rawX, rawY, transform.scale)
+
         setTransform(prev => ({
           ...prev,
-          x: panStartTransformRef.current.x + dx,
-          y: panStartTransformRef.current.y + dy,
+          x: clamped.x,
+          y: clamped.y,
         }))
       }
     }
-  }, [getGridPos, setTransform, transform])
+  }, [getGridPos, setTransform, transform, applyClamp])
 
   const handleTouchEnd = useCallback((e) => {
     if (e.touches.length === 0) {
@@ -325,11 +358,21 @@ export default function Canvas({
   const handleWheel = useCallback((e) => {
     e.preventDefault()
     const delta = e.deltaY > 0 ? 0.9 : 1.1
-    setTransform(prev => ({
-      ...prev,
-      scale: Math.max(0.3, Math.min(5, prev.scale * delta))
-    }))
-  }, [setTransform])
+    setTransform(prev => {
+      const newScale = Math.max(0.3, Math.min(5, prev.scale * delta))
+      // 重新计算缩放后的安全范围
+      const scaledGridW = canvasWidth * newScale
+      const scaledGridH = canvasHeight * newScale
+      const maxX = Math.max(0, (scaledGridW - availableW) / 2)
+      const maxY = Math.max(0, (scaledGridH - availableH) / 2)
+      return {
+        ...prev,
+        scale: newScale,
+        x: Math.max(-maxX, Math.min(maxX, prev.x)),
+        y: Math.max(-maxY, Math.min(maxY, prev.y)),
+      }
+    })
+  }, [setTransform, canvasWidth, canvasHeight, availableW, availableH])
 
   const transformStyle = {
     transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`,
