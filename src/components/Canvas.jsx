@@ -25,11 +25,14 @@ export default function Canvas({
 
   // PC 拖拽平移
   const isPanningRef = useRef(false)
-  const panCursorStartRef = useRef({ x: 0, y: 0 }) // 拖拽开始时，光标相对container的初始偏移(canvas中心-Cursor)
+  const panHasStartedRef = useRef(false) // 用户是否已经开始拖拽（超过阈值）
+  const panCursorStartRef = useRef({ x: 0, y: 0 }) // 拖拽开始时，光标相对container中心的坐标
   const panStartRef = useRef({ x: 0, y: 0 }) // 拖拽开始时的canvas中心cx,cy
 
   // PC 绘制
   const isDrawingRef = useRef(false)
+  const drawStartRef = useRef({ x: 0, y: 0 }) // 点击开始时的cell位置（用于判断点击 vs 拖拽）
+  const DRAW_THRESHOLD = 5
 
   // 触控状态
   const touchStartRef = useRef(null) // { x, y, gridPos, touchId }
@@ -191,6 +194,8 @@ export default function Canvas({
     }
     velocityRef.current = { x: 0, y: 0 }
     isPanningRef.current = false
+    panHasStartedRef.current = false
+    isDrawingRef.current = false
     setTransform({ scale: 1, cx: 0, cy: 0 })
   }, [])
 
@@ -223,50 +228,89 @@ export default function Canvas({
   }, [transform, clampCanvasCenter])
 
   // ─────────────────────────────────────────────────────────────────
-  // PC: 鼠标拖拽平移（仅在canvas外白板区域可拖）
+  // PC: 鼠标拖拽平移（canvas内外均可）
   // ─────────────────────────────────────────────────────────────────
   const handleContainerMouseDown = useCallback((e) => {
     if (e.button !== 0) return
 
-    if (isOverCanvas(e.clientX, e.clientY)) {
-      // 在canvas内 → 绘制
-      const pos = getGridPos(e.clientX, e.clientY)
-      if (pos) {
-        isDrawingRef.current = true
-        drawCell(pos.x, pos.y)
-      }
-      return
-    }
-
-    // 在canvas外 → 拖拽平移
-    e.preventDefault()
-    isPanningRef.current = true
-
-    const rect = containerRef.current.getBoundingClientRect()
+    const rect = containerRef.current?.getBoundingClientRect()
+    if (!rect) return
     const cursorX = e.clientX - rect.left - rect.width / 2
     const cursorY = e.clientY - rect.top - rect.height / 2
 
+    if (isOverCanvas(e.clientX, e.clientY)) {
+      // 在canvas内 → 记录起始位置，等移动超过阈值后切换为平移
+      const pos = getGridPos(e.clientX, e.clientY)
+      if (pos) {
+        isDrawingRef.current = true
+        drawStartRef.current = { x: e.clientX, y: e.clientY }
+        drawCell(pos.x, pos.y)
+      }
+      panHasStartedRef.current = false
+      isPanningRef.current = false
+      panCursorStartRef.current = { x: cursorX, y: cursorY }
+      panStartRef.current = { x: transform.cx, y: transform.cy }
+      return
+    }
+
+    // 在canvas外 → 直接开始平移
+    e.preventDefault()
+    isPanningRef.current = true
+    panHasStartedRef.current = true
+    isDrawingRef.current = false
     panCursorStartRef.current = { x: cursorX, y: cursorY }
     panStartRef.current = { x: transform.cx, y: transform.cy }
   }, [isOverCanvas, getGridPos, drawCell, transform])
 
   const handleContainerMouseMove = useCallback((e) => {
-    // 绘制
-    if (isDrawingRef.current) {
-      const pos = getGridPos(e.clientX, e.clientY)
-      setHoverCell(pos)
-      if (pos) drawCell(pos.x, pos.y)
-      return
-    }
-
-    // 拖拽平移
-    if (!isPanningRef.current) return
-
     const rect = containerRef.current?.getBoundingClientRect()
     if (!rect) return
-
     const cursorX = e.clientX - rect.left - rect.width / 2
     const cursorY = e.clientY - rect.top - rect.height / 2
+
+    // Drawing mode: only draw if actually on a cell AND haven't exceeded pan threshold
+    if (isDrawingRef.current && !panHasStartedRef.current) {
+      const dx = e.clientX - drawStartRef.current.x
+      const dy = e.clientY - drawStartRef.current.y
+      const distMoved = Math.hypot(dx, dy)
+
+      // Pencil/eraser: drag continues drawing strokes — only pan if on whitespace
+      if (tool === 'pencil' || tool === 'eraser') {
+        const pos = getGridPos(e.clientX, e.clientY)
+        setHoverCell(pos)
+        if (pos) {
+          drawCell(pos.x, pos.y)
+        } else if (distMoved > DRAW_THRESHOLD) {
+          // Dragged off canvas → switch to pan
+          panHasStartedRef.current = true
+          isPanningRef.current = true
+          isDrawingRef.current = false
+          panCursorStartRef.current = { x: cursorX, y: cursorY }
+          panStartRef.current = { x: transform.cx, y: transform.cy }
+        }
+        return
+      }
+
+      if (distMoved > DRAW_THRESHOLD) {
+        // Exceeded threshold → switch to pan mode
+        panHasStartedRef.current = true
+        isPanningRef.current = true
+        isDrawingRef.current = false
+        panCursorStartRef.current = { x: cursorX, y: cursorY }
+        panStartRef.current = { x: transform.cx, y: transform.cy }
+        // Don't return — let the pan logic below run this same event
+      } else {
+        // Within threshold → draw (only if actually on a cell)
+        const pos = getGridPos(e.clientX, e.clientY)
+        setHoverCell(pos)
+        if (pos) drawCell(pos.x, pos.y)
+        return
+      }
+    }
+
+    // Pan mode
+    if (!isPanningRef.current) return
+
     const deltaX = cursorX - panCursorStartRef.current.x
     const deltaY = cursorY - panCursorStartRef.current.y
 
@@ -275,11 +319,14 @@ export default function Canvas({
     const clamped = clampCanvasCenter(rawCX, rawCY, transform.scale)
 
     setTransform(prev => ({ ...prev, cx: clamped.x, cy: clamped.y }))
-  }, [getGridPos, drawCell, transform, clampCanvasCenter])
+  }, [getGridPos, drawCell, transform, clampCanvasCenter, tool])
 
   const handleContainerMouseUp = useCallback(() => {
+    // 如果是点击（在canvas内移动距离小于阈值），则已在mousedown时绘制
+    // 如果是平移后释放，不做任何额外操作
     isDrawingRef.current = false
     isPanningRef.current = false
+    panHasStartedRef.current = false
   }, [])
 
   const handleContainerMouseLeave = useCallback(() => {
@@ -561,7 +608,7 @@ export default function Canvas({
               imageRendering: 'pixelated',
               touchAction: 'none',
               display: 'block',
-              cursor: isDrawingRef.current ? 'grabbing' : 'crosshair',
+              cursor: isPanningRef.current ? 'grabbing' : 'crosshair',
             }}
           />
         </div>
