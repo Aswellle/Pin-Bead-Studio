@@ -60,18 +60,13 @@ export default function Canvas({
     const rect = containerRef.current?.getBoundingClientRect()
     if (!rect) return { minX: 0, maxX: 0, minY: 0, maxY: 0 }
     const { width: cW, height: cH } = rect
-    // canvas缩放后的尺寸
     const scaledW = canvasWidth * scale
     const scaledH = canvasHeight * scale
-    // canvas中心可移动范围：使canvas不要完全偏离viewport
-    const halfW = Math.max(0, (scaledW - cW) / 2)
-    const halfH = Math.max(0, (scaledH - cH) / 2)
-    return {
-      minX: -halfW,
-      maxX: halfW,
-      minY: -halfH,
-      maxY: halfH,
-    }
+    // canvas > 容器：允许平移直到边缘对齐
+    // canvas < 容器：允许在容器内自由移动（不锁中心）
+    const halfW = scaledW >= cW ? (scaledW - cW) / 2 : (cW - scaledW) / 2
+    const halfH = scaledH >= cH ? (scaledH - cH) / 2 : (cH - scaledH) / 2
+    return { minX: -halfW, maxX: halfW, minY: -halfH, maxY: halfH }
   }, [canvasWidth, canvasHeight])
 
   const clampCanvasCenter = useCallback((cx, cy, scale) => {
@@ -329,10 +324,12 @@ export default function Canvas({
 
     const rawCX = panStartRef.current.x + deltaX
     const rawCY = panStartRef.current.y + deltaY
-    const clamped = clampCanvasCenter(rawCX, rawCY, transform.scale)
 
-    setTransform(prev => ({ ...prev, cx: clamped.x, cy: clamped.y }))
-  }, [getGridPos, drawCell, transform, clampCanvasCenter, tool])
+    setTransform(prev => {
+      const clamped = clampCanvasCenter(rawCX, rawCY, prev.scale)
+      return { ...prev, cx: clamped.x, cy: clamped.y }
+    })
+  }, [getGridPos, drawCell, clampCanvasCenter, tool])
 
   const handleContainerMouseUp = useCallback(() => {
     isDrawingRef.current = false
@@ -488,8 +485,10 @@ export default function Canvas({
         touchMovedRef.current = true
         const rawCX = touchPanCanvasStartRef.current.x + cursorX - touchPanCursorStartRef.current.x
         const rawCY = touchPanCanvasStartRef.current.y + cursorY - touchPanCursorStartRef.current.y
-        const clamped = clampCanvasCenter(rawCX, rawCY, transform.scale)
-        setTransform(prev => ({ ...prev, cx: clamped.x, cy: clamped.y }))
+        setTransform(prev => {
+          const clamped = clampCanvasCenter(rawCX, rawCY, prev.scale)
+          return { ...prev, cx: clamped.x, cy: clamped.y }
+        })
         return
       }
 
@@ -504,17 +503,17 @@ export default function Canvas({
 
         if (moved > 10 && !touchMovedRef.current) {
           touchMovedRef.current = true
-          // 切换为平移模式：记住此刻的平移基准
           touchPanCanvasStartRef.current = { x: transform.cx, y: transform.cy }
           touchPanCursorStartRef.current = { x: cursorX, y: cursorY }
         }
 
         if (touchMovedRef.current) {
-          // 切换为平移模式
           const rawCX = touchPanCanvasStartRef.current.x + cursorX - touchPanCursorStartRef.current.x
           const rawCY = touchPanCanvasStartRef.current.y + cursorY - touchPanCursorStartRef.current.y
-          const clamped = clampCanvasCenter(rawCX, rawCY, transform.scale)
-          setTransform(prev => ({ ...prev, cx: clamped.x, cy: clamped.y }))
+          setTransform(prev => {
+            const clamped = clampCanvasCenter(rawCX, rawCY, prev.scale)
+            return { ...prev, cx: clamped.x, cy: clamped.y }
+          })
         }
       }
     }
