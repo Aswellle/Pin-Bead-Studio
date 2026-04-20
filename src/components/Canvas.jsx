@@ -1,5 +1,10 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { useGestures } from '../hooks/useGestures'
+
+const CELL_SIZE = 16
+const MIN_SCALE = 0.3
+const MAX_SCALE = 5
+const MOMENTUM_FRICTION = 0.88
+const MOMENTUM_THRESHOLD = 0.5
 
 export default function Canvas({
   gridSize,
@@ -8,67 +13,77 @@ export default function Canvas({
   selectedColor,
   tool,
   canvasData,
-  onCanvasChange
+  onCanvasChange,
 }) {
   const canvasRef = useRef(null)
   const containerRef = useRef(null)
-  const [isDrawing, setIsDrawing] = useState(false)
-  const [hoverCell, setHoverCell] = useState(null)
-  const [isPanning, setIsPanning] = useState(false)
-  const lastDrawTouchRef = useRef(null)
-  const touchStartRef = useRef(null)
-  const touchMovedRef = useRef(false)
-  const panStartRef = useRef(null)
-  const panStartTransformRef = useRef(null)
 
-  const CELL_SIZE = 16
+  const [hoverCell, setHoverCell] = useState(null)
+
+  // 变换状态：scale + canvas画布中心在container中的位置
+  const [transform, setTransform] = useState({ scale: 1, cx: 0, cy: 0 })
+
+  // PC 拖拽平移
+  const isPanningRef = useRef(false)
+  const panCursorStartRef = useRef({ x: 0, y: 0 }) // 拖拽开始时，光标相对container的初始偏移(canvas中心-Cursor)
+  const panStartRef = useRef({ x: 0, y: 0 }) // 拖拽开始时的canvas中心cx,cy
+
+  // PC 绘制
+  const isDrawingRef = useRef(false)
+
+  // 触控状态
+  const touchStartRef = useRef(null) // { x, y, gridPos, touchId }
+  const touchMovedRef = useRef(false)
+  const touchPanCursorStartRef = useRef({ x: 0, y: 0 })
+  const touchPanCanvasStartRef = useRef({ x: 0, y: 0 })
+  const velocityRef = useRef({ x: 0, y: 0 })
+  const lastTouchTimeRef = useRef(0)
+  const lastTouchPosRef = useRef({ x: 0, y: 0 })
+  const momentumRef = useRef(null)
+
+  // 双指触控状态
+  const pinchRef = useRef(null) // { startDist, startScale, startCX, startCY }
+
   const cols = gridWidth || gridSize
   const rows = gridHeight || gridSize
   const canvasWidth = cols * CELL_SIZE
   const canvasHeight = rows * CELL_SIZE
 
-  // 计算容器内可用区域（减去左右 padding）
-  const containerPadding = 60
-  const availableW = containerRef.current
-    ? containerRef.current.clientWidth - containerPadding * 2
-    : 800
-  const availableH = containerRef.current
-    ? containerRef.current.clientHeight - containerPadding * 2
-    : 600
-
-  // 根据当前 scale 计算并返回钳位后的坐标
-  const applyClamp = useCallback((x, y, scale) => {
-    const scaledGridW = canvasWidth * scale
-    const scaledGridH = canvasHeight * scale
-    const maxPanX = Math.max(0, (scaledGridW - availableW) / 2)
-    const maxPanY = Math.max(0, (scaledGridH - availableH) / 2)
+  // ─────────────────────────────────────────────────────────────────
+  // _bounds: 依据当前scale计算canvas中心的合法范围
+  // ─────────────────────────────────────────────────────────────────
+  const getBounds = useCallback((scale) => {
+    const rect = containerRef.current?.getBoundingClientRect()
+    if (!rect) return { minX: 0, maxX: 0, minY: 0, maxY: 0 }
+    const { width: cW, height: cH } = rect
+    // canvas缩放后的尺寸
+    const scaledW = canvasWidth * scale
+    const scaledH = canvasHeight * scale
+    // canvas中心可移动范围：使canvas不要完全偏离viewport
+    const halfW = Math.max(0, (scaledW - cW) / 2)
+    const halfH = Math.max(0, (scaledH - cH) / 2)
     return {
-      x: Math.max(-maxPanX, Math.min(maxPanX, x)),
-      y: Math.max(-maxPanY, Math.min(maxPanY, y)),
+      minX: -halfW,
+      maxX: halfW,
+      minY: -halfH,
+      maxY: halfH,
     }
-  }, [canvasWidth, canvasHeight, availableW, availableH])
+  }, [canvasWidth, canvasHeight])
 
-  const { ref: gestureRef, transform, resetTransform, setTransform } = useGestures({
-    minScale: 0.3,
-    maxScale: 5,
-    friction: 0.88,
-    bounceIntensity: 0.2,
-    minX: -canvasWidth * 2,
-    maxX: canvasWidth * 2,
-    minY: -canvasHeight * 2,
-    maxY: canvasHeight * 2,
-  })
+  const clampCanvasCenter = useCallback((cx, cy, scale) => {
+    const { minX, maxX, minY, maxY } = getBounds(scale)
+    return {
+      x: Math.max(minX, Math.min(maxX, cx)),
+      y: Math.max(minY, Math.min(maxY, cy)),
+    }
+  }, [getBounds])
 
-  const setContainerRef = useCallback((element) => {
-    containerRef.current = element
-    gestureRef.current = element
-  }, [gestureRef])
-
+  // ─────────────────────────────────────────────────────────────────
   // 绘制网格
+  // ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-
     const ctx = canvas.getContext('2d')
 
     ctx.fillStyle = '#ffffff'
@@ -77,7 +92,7 @@ export default function Canvas({
     if (canvasData) {
       for (let y = 0; y < rows; y++) {
         for (let x = 0; x < cols; x++) {
-          if (canvasData[y] && canvasData[y][x]) {
+          if (canvasData[y]?.[x]) {
             ctx.fillStyle = canvasData[y][x]
             ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE)
           }
@@ -109,37 +124,37 @@ export default function Canvas({
     }
   }, [canvasData, cols, rows, hoverCell, tool, canvasWidth, canvasHeight])
 
+  // ─────────────────────────────────────────────────────────────────
+  // 坐标转换
+  // ─────────────────────────────────────────────────────────────────
   const getGridPos = useCallback((clientX, clientY) => {
     const canvas = canvasRef.current
     if (!canvas) return null
-
     const rect = canvas.getBoundingClientRect()
     const scaleX = canvas.width / rect.width
     const scaleY = canvas.height / rect.height
     const x = Math.floor((clientX - rect.left) * scaleX / CELL_SIZE)
     const y = Math.floor((clientY - rect.top) * scaleY / CELL_SIZE)
-
-    if (x >= 0 && x < cols && y >= 0 && y < rows) {
-      return { x, y }
-    }
+    if (x >= 0 && x < cols && y >= 0 && y < rows) return { x, y }
     return null
   }, [cols, rows])
 
+  // 检测鼠标/触控是否在canvas区域内（考虑缩放和变换）
   const isOverCanvas = useCallback((clientX, clientY) => {
     const canvas = canvasRef.current
-    if (!canvas) return false
+    if (!canvas || !containerRef.current) return false
     const rect = canvas.getBoundingClientRect()
     return (
-      clientX >= rect.left &&
-      clientX <= rect.right &&
-      clientY >= rect.top &&
-      clientY <= rect.bottom
+      clientX >= rect.left && clientX <= rect.right &&
+      clientY >= rect.top && clientY <= rect.bottom
     )
   }, [])
 
+  // ─────────────────────────────────────────────────────────────────
+  // 填色逻辑
+  // ─────────────────────────────────────────────────────────────────
   const drawCell = useCallback((x, y) => {
     if (!canvasData) return
-
     const newData = canvasData.map(row => [...row])
 
     if (tool === 'pencil') {
@@ -150,233 +165,365 @@ export default function Canvas({
       const targetColor = canvasData[y][x]
       const fillColor = selectedColor
       if (targetColor === fillColor) return
-
       const stack = [[x, y]]
       const visited = new Set()
-
       while (stack.length > 0) {
         const [cx, cy] = stack.pop()
         const key = `${cx},${cy}`
-
         if (visited.has(key)) continue
         if (cx < 0 || cx >= cols || cy < 0 || cy >= rows) continue
         if (canvasData[cy][cx] !== targetColor) continue
-
         visited.add(key)
         newData[cy][cx] = fillColor
-
         stack.push([cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1])
       }
     }
-
     onCanvasChange(newData)
   }, [canvasData, selectedColor, tool, cols, rows, onCanvasChange])
 
-  // ==================== PC 端鼠标拖拽平移 ====================
+  // ─────────────────────────────────────────────────────────────────
+  // 重置
+  // ─────────────────────────────────────────────────────────────────
+  const resetTransform = useCallback(() => {
+    if (momentumRef.current) {
+      cancelAnimationFrame(momentumRef.current)
+      momentumRef.current = null
+    }
+    velocityRef.current = { x: 0, y: 0 }
+    isPanningRef.current = false
+    setTransform({ scale: 1, cx: 0, cy: 0 })
+  }, [])
+
+  // ─────────────────────────────────────────────────────────────────
+  // PC: 鼠标滚轮缩放（以光标为中心）
+  // ─────────────────────────────────────────────────────────────────
+  const handleWheel = useCallback((e) => {
+    e.preventDefault()
+    const rect = containerRef.current?.getBoundingClientRect()
+    if (!rect) return
+
+    const cursorX = e.clientX - rect.left - rect.width / 2
+    const cursorY = e.clientY - rect.top - rect.height / 2
+
+    const oldScale = transform.scale
+    const delta = e.deltaY > 0 ? 0.9 : 1.1
+    const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, oldScale * delta))
+
+    if (Math.abs(newScale - oldScale) < 0.001) return
+
+    // 保持光标下的canvas坐标位置不变
+    const dtx = cursorX * (1 - newScale / oldScale)
+    const dty = cursorY * (1 - newScale / oldScale)
+
+    const rawCX = transform.cx + dtx
+    const rawCY = transform.cy + dty
+    const clamped = clampCanvasCenter(rawCX, rawCY, newScale)
+
+    setTransform({ scale: newScale, cx: clamped.x, cy: clamped.y })
+  }, [transform, clampCanvasCenter])
+
+  // ─────────────────────────────────────────────────────────────────
+  // PC: 鼠标拖拽平移（仅在canvas外白板区域可拖）
+  // ─────────────────────────────────────────────────────────────────
   const handleContainerMouseDown = useCallback((e) => {
     if (e.button !== 0) return
 
-    // 检查是否在 canvas 区域外
-    if (!isOverCanvas(e.clientX, e.clientY)) {
-      e.preventDefault()
-      setIsPanning(true)
-      panStartRef.current = { x: e.clientX, y: e.clientY }
-      panStartTransformRef.current = { x: transform.x, y: transform.y }
+    if (isOverCanvas(e.clientX, e.clientY)) {
+      // 在canvas内 → 绘制
+      const pos = getGridPos(e.clientX, e.clientY)
+      if (pos) {
+        isDrawingRef.current = true
+        drawCell(pos.x, pos.y)
+      }
+      return
     }
-  }, [isOverCanvas, transform])
+
+    // 在canvas外 → 拖拽平移
+    e.preventDefault()
+    isPanningRef.current = true
+
+    const rect = containerRef.current.getBoundingClientRect()
+    const cursorX = e.clientX - rect.left - rect.width / 2
+    const cursorY = e.clientY - rect.top - rect.height / 2
+
+    panCursorStartRef.current = { x: cursorX, y: cursorY }
+    panStartRef.current = { x: transform.cx, y: transform.cy }
+  }, [isOverCanvas, getGridPos, drawCell, transform])
 
   const handleContainerMouseMove = useCallback((e) => {
-    if (!isPanning || !panStartRef.current) return
+    // 绘制
+    if (isDrawingRef.current) {
+      const pos = getGridPos(e.clientX, e.clientY)
+      setHoverCell(pos)
+      if (pos) drawCell(pos.x, pos.y)
+      return
+    }
 
-    const dx = e.clientX - panStartRef.current.x
-    const dy = e.clientY - panStartRef.current.y
+    // 拖拽平移
+    if (!isPanningRef.current) return
 
-    const rawX = panStartTransformRef.current.x + dx
-    const rawY = panStartTransformRef.current.y + dy
-    const clamped = applyClamp(rawX, rawY, transform.scale)
+    const rect = containerRef.current?.getBoundingClientRect()
+    if (!rect) return
 
-    setTransform(prev => ({
-      ...prev,
-      x: clamped.x,
-      y: clamped.y,
-    }))
-  }, [isPanning, setTransform, transform, applyClamp])
+    const cursorX = e.clientX - rect.left - rect.width / 2
+    const cursorY = e.clientY - rect.top - rect.height / 2
+    const deltaX = cursorX - panCursorStartRef.current.x
+    const deltaY = cursorY - panCursorStartRef.current.y
+
+    const rawCX = panStartRef.current.x + deltaX
+    const rawCY = panStartRef.current.y + deltaY
+    const clamped = clampCanvasCenter(rawCX, rawCY, transform.scale)
+
+    setTransform(prev => ({ ...prev, cx: clamped.x, cy: clamped.y }))
+  }, [getGridPos, drawCell, transform, clampCanvasCenter])
 
   const handleContainerMouseUp = useCallback(() => {
-    setIsPanning(false)
-    panStartRef.current = null
-    panStartTransformRef.current = null
+    isDrawingRef.current = false
+    isPanningRef.current = false
   }, [])
 
-  // ==================== 触控处理 ====================
-  const handleTouchStart = useCallback((e) => {
-    if (e.touches.length === 2) {
-      touchStartRef.current = null
-      touchMovedRef.current = false
-      return
-    }
-
-    if (e.touches.length === 1) {
-      const touch = e.touches[0]
-      const pos = getGridPos(touch.clientX, touch.clientY)
-
-      touchStartRef.current = { x: touch.clientX, y: touch.clientY, gridPos: pos }
-      touchMovedRef.current = false
-
-      if (!pos) {
-        // 触碰在 canvas 外 → 开始平移
-        panStartRef.current = { x: touch.clientX, y: touch.clientY }
-        panStartTransformRef.current = { x: transform.x, y: transform.y }
-      }
-    }
-  }, [getGridPos, transform])
-
-  const handleTouchMove = useCallback((e) => {
-    if (e.touches.length === 2) {
-      panStartRef.current = null
-      panStartTransformRef.current = null
-      return
-    }
-
-    if (e.touches.length === 1) {
-      const touch = e.touches[0]
-
-      // 如果有 panStartRef，说明在 canvas 外，直接平移
-      if (panStartRef.current) {
-        e.preventDefault()
-        const dx = touch.clientX - panStartRef.current.x
-        const dy = touch.clientY - panStartRef.current.y
-
-        const rawX = panStartTransformRef.current.x + dx
-        const rawY = panStartTransformRef.current.y + dy
-        const clamped = applyClamp(rawX, rawY, transform.scale)
-
-        setTransform(prev => ({
-          ...prev,
-          x: clamped.x,
-          y: clamped.y,
-        }))
-        return
-      }
-
-      // 在 canvas 内
-      const pos = getGridPos(touch.clientX, touch.clientY)
-      setHoverCell(pos)
-
-      if (touchStartRef.current && !touchMovedRef.current) {
-        const dx = touch.clientX - touchStartRef.current.x
-        const dy = touch.clientY - touchStartRef.current.y
-        const distance = Math.sqrt(dx * dx + dy * dy)
-
-        if (distance > 10) {
-          touchMovedRef.current = true
-          // 切换到平移模式
-          panStartRef.current = { x: touch.clientX, y: touch.clientY }
-          panStartTransformRef.current = { x: transform.x, y: transform.y }
-        }
-      }
-
-      // 在 canvas 内移动 >10px 后，开始平移
-      if (touchMovedRef.current && panStartRef.current) {
-        e.preventDefault()
-        const dx = touch.clientX - panStartRef.current.x
-        const dy = touch.clientY - panStartRef.current.y
-
-        const rawX = panStartTransformRef.current.x + dx
-        const rawY = panStartTransformRef.current.y + dy
-        const clamped = applyClamp(rawX, rawY, transform.scale)
-
-        setTransform(prev => ({
-          ...prev,
-          x: clamped.x,
-          y: clamped.y,
-        }))
-      }
-    }
-  }, [getGridPos, setTransform, transform, applyClamp])
-
-  const handleTouchEnd = useCallback((e) => {
-    if (e.touches.length === 0) {
-      // 如果是点击（在 canvas 内且移动 < 10px），绘制格子
-      if (touchStartRef.current && !touchMovedRef.current && touchStartRef.current.gridPos) {
-        const { gridPos } = touchStartRef.current
-        drawCell(gridPos.x, gridPos.y)
-      }
-
-      setIsDrawing(false)
-      lastDrawTouchRef.current = null
-      touchStartRef.current = null
-      touchMovedRef.current = false
-      panStartRef.current = null
-      panStartTransformRef.current = null
-    }
-  }, [drawCell])
-
-  const handleTouchCancel = useCallback(() => {
-    setIsDrawing(false)
-    lastDrawTouchRef.current = null
-    touchStartRef.current = null
-    touchMovedRef.current = false
-    panStartRef.current = null
-    panStartTransformRef.current = null
+  const handleContainerMouseLeave = useCallback(() => {
+    isDrawingRef.current = false
+    isPanningRef.current = false
+    setHoverCell(null)
   }, [])
 
-  // ==================== 桌面端鼠标在 canvas 上绘制 ====================
-  const handleMouseDown = useCallback((e) => {
-    if (e.button !== 0) return
-    const pos = getGridPos(e.clientX, e.clientY)
-    if (pos) {
-      setIsDrawing(true)
-      drawCell(pos.x, pos.y)
-    }
-  }, [getGridPos, drawCell])
-
+  // PC hover
   const handleMouseMove = useCallback((e) => {
     const pos = getGridPos(e.clientX, e.clientY)
     setHoverCell(pos)
-
-    if (isDrawing) {
-      drawCell(pos.x, pos.y)
-    }
-  }, [getGridPos, drawCell, isDrawing])
-
-  const handleMouseUp = useCallback(() => {
-    setIsDrawing(false)
-  }, [])
+  }, [getGridPos])
 
   const handleMouseLeave = useCallback(() => {
     setHoverCell(null)
-    setIsDrawing(false)
   }, [])
+
+  // ─────────────────────────────────────────────────────────────────
+  // 移动端触控
+  // ─────────────────────────────────────────────────────────────────
+  const stopMomentum = useCallback(() => {
+    if (momentumRef.current) {
+      cancelAnimationFrame(momentumRef.current)
+      momentumRef.current = null
+    }
+    velocityRef.current = { x: 0, y: 0 }
+  }, [])
+
+  const startMomentum = useCallback(() => {
+    stopMomentum()
+    const applyMomentum = () => {
+      const { x: vx, y: vy } = velocityRef.current
+      const speed = Math.sqrt(vx * vx + vy * vy)
+      if (speed < MOMENTUM_THRESHOLD) {
+        velocityRef.current = { x: 0, y: 0 }
+        return
+      }
+      setTransform(prev => {
+        const rawCX = prev.cx + vx
+        const rawCY = prev.cy + vy
+        const clamped = clampCanvasCenter(rawCX, rawCY, prev.scale)
+        return { ...prev, cx: clamped.x, cy: clamped.y }
+      })
+      velocityRef.current = {
+        x: vx * MOMENTUM_FRICTION,
+        y: vy * MOMENTUM_FRICTION,
+      }
+      momentumRef.current = requestAnimationFrame(applyMomentum)
+    }
+    momentumRef.current = requestAnimationFrame(applyMomentum)
+  }, [stopMomentum, clampCanvasCenter])
+
+  const handleTouchStart = useCallback((e) => {
+    e.preventDefault()
+    stopMomentum()
+
+    const rect = containerRef.current?.getBoundingClientRect()
+    if (!rect) return
+
+    if (e.touches.length === 2) {
+      // 双指 → 开始pinch
+      pinchRef.current = {
+        startDist: Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        ),
+        startScale: transform.scale,
+        startCX: transform.cx,
+        startCY: transform.cy,
+      }
+      touchStartRef.current = null
+      touchMovedRef.current = false
+      return
+    }
+
+    if (e.touches.length === 1) {
+      const t = e.touches[0]
+      const cursorX = t.clientX - rect.left - rect.width / 2
+      const cursorY = t.clientY - rect.top - rect.height / 2
+      const gridPos = getGridPos(t.clientX, t.clientY)
+
+      touchStartRef.current = { x: t.clientX, y: t.clientY, gridPos }
+      touchMovedRef.current = false
+      velocityRef.current = { x: 0, y: 0 }
+      lastTouchTimeRef.current = Date.now()
+      lastTouchPosRef.current = { x: t.clientX, y: t.clientY }
+
+      // 不在grid上 → 开始单指平移
+      if (!gridPos) {
+        touchPanCursorStartRef.current = { x: cursorX, y: cursorY }
+        touchPanCanvasStartRef.current = { x: transform.cx, y: transform.cy }
+      }
+    }
+  }, [stopMomentum, getGridPos, transform])
+
+  const handleTouchMove = useCallback((e) => {
+    e.preventDefault()
+    const rect = containerRef.current?.getBoundingClientRect()
+    if (!rect) return
+
+    if (e.touches.length === 2 && pinchRef.current) {
+      // 双指 → pinch缩放
+      const dx = e.touches[0].clientX - e.touches[1].clientX
+      const dy = e.touches[0].clientY - e.touches[1].clientY
+      const dist = Math.hypot(dx, dy)
+      const { startDist, startScale, startCX, startCY } = pinchRef.current
+      const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE,
+        startScale * (dist / startDist)
+      ))
+
+      // pinch中心
+      const pcx = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left - rect.width / 2
+      const pcy = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top - rect.height / 2
+
+      // 保持pinch中心canvas坐标不变
+      const rawCX = startCX + pcx * (1 - newScale / startScale)
+      const rawCY = startCY + pcy * (1 - newScale / startScale)
+      const clamped = clampCanvasCenter(rawCX, rawCY, newScale)
+
+      setTransform({ scale: newScale, cx: clamped.x, cy: clamped.y })
+      return
+    }
+
+    if (e.touches.length === 1) {
+      const t = e.touches[0]
+      const now = Date.now()
+      const dt = now - lastTouchTimeRef.current
+      const dx = t.clientX - lastTouchPosRef.current.x
+      const dy = t.clientY - lastTouchPosRef.current.y
+
+      if (dt > 0) {
+        velocityRef.current = {
+          x: dx / dt * 16,
+          y: dy / dt * 16,
+        }
+      }
+      lastTouchTimeRef.current = now
+      lastTouchPosRef.current = { x: t.clientX, y: t.clientY }
+
+      const cursorX = t.clientX - rect.left - rect.width / 2
+      const cursorY = t.clientY - rect.top - rect.height / 2
+
+      // 不在grid上 → 单指平移
+      if (!touchStartRef.current?.gridPos && touchStartRef.current) {
+        touchMovedRef.current = true
+        const rawCX = touchPanCanvasStartRef.current.x + cursorX - touchPanCursorStartRef.current.x
+        const rawCY = touchPanCanvasStartRef.current.y + cursorY - touchPanCursorStartRef.current.y
+        const clamped = clampCanvasCenter(rawCX, rawCY, transform.scale)
+        setTransform(prev => ({ ...prev, cx: clamped.x, cy: clamped.y }))
+        return
+      }
+
+      // 在grid上但有移动
+      if (touchStartRef.current?.gridPos) {
+        const gridPos = getGridPos(t.clientX, t.clientY)
+        setHoverCell(gridPos)
+
+        const startX = touchStartRef.current.x
+        const startY = touchStartRef.current.y
+        const moved = Math.hypot(t.clientX - startX, t.clientY - startY)
+
+        if (moved > 10 && !touchMovedRef.current) {
+          touchMovedRef.current = true
+          // 切换为平移模式：记住此刻的平移基准
+          touchPanCanvasStartRef.current = { x: transform.cx, y: transform.cy }
+          touchPanCursorStartRef.current = { x: cursorX, y: cursorY }
+        }
+
+        if (touchMovedRef.current) {
+          // 切换为平移模式
+          const rawCX = touchPanCanvasStartRef.current.x + cursorX - touchPanCursorStartRef.current.x
+          const rawCY = touchPanCanvasStartRef.current.y + cursorY - touchPanCursorStartRef.current.y
+          const clamped = clampCanvasCenter(rawCX, rawCY, transform.scale)
+          setTransform(prev => ({ ...prev, cx: clamped.x, cy: clamped.y }))
+        }
+      }
+    }
+  }, [getGridPos, transform, clampCanvasCenter])
+
+  const handleTouchEnd = useCallback((e) => {
+    e.preventDefault()
+
+    if (e.touches.length === 0) {
+      pinchRef.current = null
+
+      // 单指点击(未移动)且在grid上 → 填色
+      if (touchStartRef.current?.gridPos && !touchMovedRef.current) {
+        drawCell(touchStartRef.current.gridPos.x, touchStartRef.current.gridPos.y)
+      }
+
+      // 惯性
+      const { x: vx, y: vy } = velocityRef.current
+      if (Math.abs(vx) > 1 || Math.abs(vy) > 1) {
+        startMomentum()
+      }
+
+      touchStartRef.current = null
+      touchMovedRef.current = false
+      setHoverCell(null)
+    } else if (e.touches.length === 1) {
+      // 从双指切回单指
+      pinchRef.current = null
+      const t = e.touches[0]
+      const rect = containerRef.current?.getBoundingClientRect()
+      if (rect) {
+        const gridPos = getGridPos(t.clientX, t.clientY)
+        touchStartRef.current = { x: t.clientX, y: t.clientY, gridPos }
+        touchMovedRef.current = false
+        lastTouchTimeRef.current = Date.now()
+        lastTouchPosRef.current = { x: t.clientX, y: t.clientY }
+
+        if (!gridPos) {
+          const cursorX = t.clientX - rect.left - rect.width / 2
+          const cursorY = t.clientY - rect.top - rect.height / 2
+          touchPanCanvasStartRef.current = { x: transform.cx, y: transform.cy }
+          touchPanCursorStartRef.current = { x: cursorX, y: cursorY }
+        }
+      }
+    }
+  }, [drawCell, getGridPos, transform, startMomentum])
+
+  const handleTouchCancel = useCallback(() => {
+    stopMomentum()
+    touchStartRef.current = null
+    touchMovedRef.current = false
+    pinchRef.current = null
+    setHoverCell(null)
+  }, [stopMomentum])
 
   // 双击重置
   const handleDoubleClick = useCallback(() => {
     resetTransform()
   }, [resetTransform])
 
-  // 滚轮缩放
-  const handleWheel = useCallback((e) => {
-    e.preventDefault()
-    const delta = e.deltaY > 0 ? 0.9 : 1.1
-    setTransform(prev => {
-      const newScale = Math.max(0.3, Math.min(5, prev.scale * delta))
-      // 重新计算缩放后的安全范围
-      const scaledGridW = canvasWidth * newScale
-      const scaledGridH = canvasHeight * newScale
-      const maxX = Math.max(0, (scaledGridW - availableW) / 2)
-      const maxY = Math.max(0, (scaledGridH - availableH) / 2)
-      return {
-        ...prev,
-        scale: newScale,
-        x: Math.max(-maxX, Math.min(maxX, prev.x)),
-        y: Math.max(-maxY, Math.min(maxY, prev.y)),
-      }
-    })
-  }, [setTransform, canvasWidth, canvasHeight, availableW, availableH])
-
+  // ─────────────────────────────────────────────────────────────────
+  // Transform style: canvas-inner始终以自己中心为原点缩放
+  // ─────────────────────────────────────────────────────────────────
   const transformStyle = {
-    transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`,
-    transformOrigin: 'center center',
+    position: 'absolute',
+    left: `calc(50% + ${transform.cx}px)`,
+    top: `calc(50% + ${transform.cy}px)`,
+    transform: `translate(-50%, -50%) scale(${transform.scale})`,
+    transformOrigin: '0 0',
     willChange: 'transform',
   }
 
@@ -386,44 +533,38 @@ export default function Canvas({
         <span>{cols} × {rows}</span>
         <span>|</span>
         <span>{Math.round(transform.scale * 100)}%</span>
-        <button
-          className="reset-btn"
-          onClick={resetTransform}
-          title="双击或点击重置"
-        >
+        <button className="reset-btn" onClick={resetTransform} title="双击重置">
           重置
         </button>
       </div>
 
       <div
         className="canvas-container"
-        ref={setContainerRef}
+        ref={containerRef}
         onWheel={handleWheel}
-        onDoubleClick={handleDoubleClick}
         onMouseDown={handleContainerMouseDown}
         onMouseMove={handleContainerMouseMove}
         onMouseUp={handleContainerMouseUp}
-        onMouseLeave={handleContainerMouseUp}
-        style={{ cursor: isPanning ? 'grabbing' : 'default' }}
+        onMouseLeave={handleContainerMouseLeave}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchCancel}
+        onDoubleClick={handleDoubleClick}
+        style={{ cursor: isPanningRef.current ? 'grabbing' : 'default' }}
       >
         <div className="canvas-inner" style={transformStyle}>
           <canvas
             ref={canvasRef}
             width={canvasWidth}
             height={canvasHeight}
-            onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseLeave}
-            onTouchStart={handleTouchStart}
-            onTouchMove={handleTouchMove}
-            onTouchEnd={handleTouchEnd}
-            onTouchCancel={handleTouchCancel}
             style={{
-              cursor: isDrawing ? 'grabbing' : 'crosshair',
               imageRendering: 'pixelated',
               touchAction: 'none',
               display: 'block',
+              cursor: isDrawingRef.current ? 'grabbing' : 'crosshair',
             }}
           />
         </div>
@@ -437,7 +578,6 @@ export default function Canvas({
           align-items: center;
           padding: 16px;
         }
-
         .canvas-info {
           display: flex;
           gap: 12px;
@@ -450,7 +590,6 @@ export default function Canvas({
           border-radius: 20px;
           border: 1px solid #e5e7eb;
         }
-
         .reset-btn {
           background: #3b82f6;
           color: white;
@@ -461,23 +600,19 @@ export default function Canvas({
           cursor: pointer;
           transition: all 0.2s;
         }
-
         .reset-btn:hover {
           background: #2563eb;
           transform: scale(1.05);
         }
-
         .canvas-container {
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          overflow: visible;
+          position: relative;
+          overflow: hidden;
           touch-action: none;
-          padding: 60px;
           user-select: none;
           -webkit-user-select: none;
+          width: 100%;
+          height: 100%;
         }
-
         .canvas-inner {
           background: white;
           border-radius: 12px;
@@ -486,7 +621,6 @@ export default function Canvas({
             0 4px 6px -1px rgba(0, 0, 0, 0.1),
             0 2px 4px -2px rgba(0, 0, 0, 0.1),
             0 0 0 1px rgba(0, 0, 0, 0.05);
-          transition: transform 0.05s ease-out;
         }
       `}</style>
     </div>
