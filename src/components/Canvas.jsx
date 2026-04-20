@@ -19,6 +19,7 @@ export default function Canvas({
   const containerRef = useRef(null)
 
   const [hoverCell, setHoverCell] = useState(null)
+  const [panActive, setPanActive] = useState(false)
 
   // 变换状态：scale + canvas画布中心在container中的位置
   const [transform, setTransform] = useState({ scale: 1, cx: 0, cy: 0 })
@@ -196,6 +197,7 @@ export default function Canvas({
     isPanningRef.current = false
     panHasStartedRef.current = false
     isDrawingRef.current = false
+    setPanActive(false)
     setTransform({ scale: 1, cx: 0, cy: 0 })
   }, [])
 
@@ -211,7 +213,7 @@ export default function Canvas({
     const cursorY = e.clientY - rect.top - rect.height / 2
 
     const oldScale = transform.scale
-    const delta = e.deltaY > 0 ? 0.9 : 1.1
+    const delta = e.deltaY > 0 ? 0.93 : 1.07
     const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, oldScale * delta))
 
     if (Math.abs(newScale - oldScale) < 0.001) return
@@ -238,6 +240,17 @@ export default function Canvas({
     const cursorX = e.clientX - rect.left - rect.width / 2
     const cursorY = e.clientY - rect.top - rect.height / 2
 
+    if (tool === 'hand') {
+      e.preventDefault()
+      isPanningRef.current = true
+      panHasStartedRef.current = true
+      isDrawingRef.current = false
+      setPanActive(true)
+      panCursorStartRef.current = { x: cursorX, y: cursorY }
+      panStartRef.current = { x: transform.cx, y: transform.cy }
+      return
+    }
+
     if (isOverCanvas(e.clientX, e.clientY)) {
       // 在canvas内 → 记录起始位置，等移动超过阈值后切换为平移
       const pos = getGridPos(e.clientX, e.clientY)
@@ -260,7 +273,7 @@ export default function Canvas({
     isDrawingRef.current = false
     panCursorStartRef.current = { x: cursorX, y: cursorY }
     panStartRef.current = { x: transform.cx, y: transform.cy }
-  }, [isOverCanvas, getGridPos, drawCell, transform])
+  }, [isOverCanvas, getGridPos, drawCell, transform, tool])
 
   const handleContainerMouseMove = useCallback((e) => {
     const rect = containerRef.current?.getBoundingClientRect()
@@ -322,16 +335,16 @@ export default function Canvas({
   }, [getGridPos, drawCell, transform, clampCanvasCenter, tool])
 
   const handleContainerMouseUp = useCallback(() => {
-    // 如果是点击（在canvas内移动距离小于阈值），则已在mousedown时绘制
-    // 如果是平移后释放，不做任何额外操作
     isDrawingRef.current = false
     isPanningRef.current = false
     panHasStartedRef.current = false
+    setPanActive(false)
   }, [])
 
   const handleContainerMouseLeave = useCallback(() => {
     isDrawingRef.current = false
     isPanningRef.current = false
+    setPanActive(false)
     setHoverCell(null)
   }, [])
 
@@ -407,7 +420,7 @@ export default function Canvas({
       const t = e.touches[0]
       const cursorX = t.clientX - rect.left - rect.width / 2
       const cursorY = t.clientY - rect.top - rect.height / 2
-      const gridPos = getGridPos(t.clientX, t.clientY)
+      const gridPos = tool === 'hand' ? null : getGridPos(t.clientX, t.clientY)
 
       touchStartRef.current = { x: t.clientX, y: t.clientY, gridPos }
       touchMovedRef.current = false
@@ -415,13 +428,13 @@ export default function Canvas({
       lastTouchTimeRef.current = Date.now()
       lastTouchPosRef.current = { x: t.clientX, y: t.clientY }
 
-      // 不在grid上 → 开始单指平移
+      // 抓手工具或不在grid上 → 开始单指平移
       if (!gridPos) {
         touchPanCursorStartRef.current = { x: cursorX, y: cursorY }
         touchPanCanvasStartRef.current = { x: transform.cx, y: transform.cy }
       }
     }
-  }, [stopMomentum, getGridPos, transform])
+  }, [stopMomentum, getGridPos, transform, tool])
 
   const handleTouchMove = useCallback((e) => {
     e.preventDefault()
@@ -513,8 +526,8 @@ export default function Canvas({
     if (e.touches.length === 0) {
       pinchRef.current = null
 
-      // 单指点击(未移动)且在grid上 → 填色
-      if (touchStartRef.current?.gridPos && !touchMovedRef.current) {
+      // 单指点击(未移动)且在grid上 → 填色（抓手工具不绘制）
+      if (tool !== 'hand' && touchStartRef.current?.gridPos && !touchMovedRef.current) {
         drawCell(touchStartRef.current.gridPos.x, touchStartRef.current.gridPos.y)
       }
 
@@ -547,7 +560,7 @@ export default function Canvas({
         }
       }
     }
-  }, [drawCell, getGridPos, transform, startMomentum])
+  }, [drawCell, getGridPos, transform, startMomentum, tool])
 
   const handleTouchCancel = useCallback(() => {
     stopMomentum()
@@ -595,7 +608,7 @@ export default function Canvas({
         onTouchEnd={handleTouchEnd}
         onTouchCancel={handleTouchCancel}
         onDoubleClick={handleDoubleClick}
-        style={{ cursor: isPanningRef.current ? 'grabbing' : 'default' }}
+        style={{ cursor: tool === 'hand' ? (panActive ? 'grabbing' : 'grab') : (panActive ? 'grabbing' : 'default') }}
       >
         <div className="canvas-inner" style={transformStyle}>
           <canvas
@@ -608,7 +621,7 @@ export default function Canvas({
               imageRendering: 'pixelated',
               touchAction: 'none',
               display: 'block',
-              cursor: isPanningRef.current ? 'grabbing' : 'crosshair',
+              cursor: tool === 'hand' ? (panActive ? 'grabbing' : 'grab') : (panActive ? 'grabbing' : 'crosshair'),
             }}
           />
         </div>

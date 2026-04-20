@@ -45,7 +45,8 @@
     "tool": {
       "pencil": "Pencil",
       "eraser": "Eraser",
-      "fill": "Fill"
+      "fill": "Fill",
+      "hand": "Hand"
     }
   },
   "export": {

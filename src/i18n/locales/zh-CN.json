@@ -45,7 +45,8 @@
     "tool": {
       "pencil": "画笔",
       "eraser": "橡皮擦",
-      "fill": "填充"
+      "fill": "填充",
+      "hand": "抓手"
     }
   },
   "export": {

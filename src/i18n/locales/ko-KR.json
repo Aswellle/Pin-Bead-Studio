@@ -45,7 +45,8 @@
     "tool": {
       "pencil": "연필",
       "eraser": "지우개",
-      "fill": "채우기"
+      "fill": "채우기",
+      "hand": "손"
     }
   },
   "export": {

@@ -45,7 +45,8 @@
     "tool": {
       "pencil": "鉛筆",
       "eraser": "消しゴム",
-      "fill": "塗りつぶし"
+      "fill": "塗りつぶし",
+      "hand": "移動"
     }
   },
   "export": {

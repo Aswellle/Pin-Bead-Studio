@@ -17,6 +17,7 @@ export default function MobileToolbar({
     { id: 'pencil', icon: '✏️', label: t('canvas.tool.pencil') },
     { id: 'eraser', icon: '🧹', label: t('canvas.tool.eraser') },
     { id: 'fill', icon: '🪣', label: t('canvas.tool.fill') },
+    { id: 'hand', icon: '🖐️', label: t('canvas.tool.hand') },
   ]
 
   return (
