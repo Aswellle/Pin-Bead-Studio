@@ -516,14 +516,11 @@ export default function Canvas({
   }, [resetTransform])
 
   // ─────────────────────────────────────────────────────────────────
-  // Transform style: canvas-inner始终以自己中心为原点缩放
+  // Transform style: left:50%/top:50% center canvas-inner on canvas-container,
+  // transformTranslate applies the pan offset (cx/cy) + centering (-50%) + scale
   // ─────────────────────────────────────────────────────────────────
   const transformStyle = {
-    position: 'absolute',
-    left: `calc(50% + ${transform.cx}px)`,
-    top: `calc(50% + ${transform.cy}px)`,
-    transform: `translate(-50%, -50%) scale(${transform.scale})`,
-    transformOrigin: '0 0',
+    transform: `translate(calc(-50% + ${transform.cx}px), calc(-50% + ${transform.cy}px)) scale(${transform.scale})`,
     willChange: 'transform',
   }
 
@@ -572,11 +569,13 @@ export default function Canvas({
 
       <style>{`
         .canvas-wrapper {
+          position: relative;
           display: flex;
           flex-direction: column;
-          gap: 12px;
-          align-items: center;
-          padding: 16px;
+          flex: 1;
+          width: 100%;
+          height: 100%;
+          min-height: 0;
         }
         .canvas-info {
           display: flex;
@@ -589,6 +588,7 @@ export default function Canvas({
           padding: 8px 16px;
           border-radius: 20px;
           border: 1px solid #e5e7eb;
+          flex-shrink: 0;
         }
         .reset-btn {
           background: #3b82f6;
@@ -606,14 +606,18 @@ export default function Canvas({
         }
         .canvas-container {
           position: relative;
+          flex: 1;
+          min-height: 0;
           overflow: hidden;
           touch-action: none;
           user-select: none;
           -webkit-user-select: none;
-          width: 100%;
-          height: 100%;
         }
         .canvas-inner {
+          position: absolute;
+          left: 50%;
+          top: 50%;
+          transform-origin: 0 0;
           background: white;
           border-radius: 12px;
           padding: 12px;
