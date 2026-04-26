@@ -175,6 +175,16 @@ export default function App() {
     setCurrentPage('canvas')
   }
 
+  // 加载保存的作品到画布
+  const handleLoadWork = (work) => {
+    setGridSize(work.gridSize)
+    setGridWidth(work.gridWidth ?? null)
+    setGridHeight(work.gridHeight ?? null)
+    setCanvasData(work.canvasData)
+    setCurrentPalette(work.paletteId || 'perler')
+    setCurrentPage('canvas')
+  }
+
   // 页面切换
   const handlePageChange = (page) => {
     setCurrentPage(page)
@@ -347,6 +357,7 @@ export default function App() {
           <Gallery
             onLoadTemplate={handleLoadTemplate}
             onSaveWork={handleSaveWork}
+            onLoadWork={handleLoadWork}
             savedWorks={savedWorks}
           />
         )
