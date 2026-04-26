@@ -272,7 +272,9 @@ export default function Tutorials() {
                   {t(`tutorials.articles.${selectedTutorial.id}`, selectedTutorial.title)}
                 </span>
               </div>
-              <h1 className="content-title">{selectedTutorial.title}</h1>
+              <h1 className="content-title">
+                  {t(`tutorials.articles.${selectedTutorial.id}`, selectedTutorial.title)}
+                </h1>
             </div>
 
             <div className="content-body">
@@ -726,14 +728,14 @@ function NavigationButtons({ currentTutorial, onSelect }) {
           <path d="M19 12H5"/>
           <path d="M12 19l-7-7 7-7"/>
         </svg>
-        {t('tutorials.prev')}{prevTutorial?.title || t('tutorials.noMore')}
+        {t('tutorials.prev')}{prevTutorial ? t(`tutorials.articles.${prevTutorial.id}`, prevTutorial.title) : t('tutorials.noMore')}
       </button>
       <button
         className="nav-btn"
         disabled={!nextTutorial}
         onClick={() => nextTutorial && onSelect(nextTutorial)}
       >
-        {t('tutorials.next')}{nextTutorial?.title || t('tutorials.noMore')}
+        {t('tutorials.next')}{nextTutorial ? t(`tutorials.articles.${nextTutorial.id}`, nextTutorial.title) : t('tutorials.noMore')}
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <path d="M5 12h14"/>
           <path d="M12 5l7 7-7 7"/>
