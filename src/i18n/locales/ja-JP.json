@@ -109,7 +109,35 @@
     "title": "チュートリアル目次", "markAllRead": "すべて既読にする", "reset": "リセット",
     "steps": "手順", "tips": "ヒント", "diagram": "図",
     "noSelection": "左からチュートリアルを選択してください",
-    "prev": "前へ：", "next": "次へ：", "noMore": "なし"
+    "prev": "前へ：", "next": "次へ：", "noMore": "なし",
+    "chapters": {
+      "getting-started": "入門ガイド",
+      "ironing-guide": "アイロン攻略",
+      "anti-warp": "反り防止",
+      "color-design": "配色デザイン",
+      "advanced-skills": "上達スキル",
+      "protection": "作品保護"
+    },
+    "articles": {
+      "what-is-bead": "拼豆とは",
+      "basic-tools": "基本ツール紹介",
+      "first-project": "最初の作品：ハートを作る",
+      "brands-guide": "ブランド全解説",
+      "ironing-technique": "温度と手法",
+      "double-sided-ironing": "両面アイロン標準流程",
+      "ironing-rescue": "アイロン失敗急救手册",
+      "why-warping": "反りの原因",
+      "weight-pressing": "加重プレス法",
+      "tape-method": "大型作品テープ法",
+      "color-principles": "色選択の原則",
+      "shadow-highlight": "影とハイライト",
+      "image-to-pattern": "画像から图纸へ",
+      "large-grid-joining": "大型グリッド接合",
+      "gradient-technique": "グラデーション技法",
+      "multi-brand-mix": "複数ブランド混用",
+      "cooling-shaping": "冷却定型流程",
+      "display-storage": "展示と保存"
+    }
   },
   "stats": { "noData": "データなし", "beads": "個のビード", "colors": "色" },
   "common": {

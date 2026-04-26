@@ -109,7 +109,35 @@
     "title": "Tutorial Contents", "markAllRead": "Mark all as read", "reset": "Reset",
     "steps": "Steps", "tips": "Tips", "diagram": "Diagram",
     "noSelection": "Select a tutorial from the left to begin",
-    "prev": "Previous: ", "next": "Next: ", "noMore": "None"
+    "prev": "Previous: ", "next": "Next: ", "noMore": "None",
+    "chapters": {
+      "getting-started": "Getting Started",
+      "ironing-guide": "Ironing Guide",
+      "anti-warp": "Anti-Warping",
+      "color-design": "Color Design",
+      "advanced-skills": "Advanced Skills",
+      "protection": "Protection"
+    },
+    "articles": {
+      "what-is-bead": "What Are Perler Beads",
+      "basic-tools": "Basic Tools",
+      "first-project": "Your First Project: Heart",
+      "brands-guide": "Bead Brand Guide",
+      "ironing-technique": "Temperature & Technique",
+      "double-sided-ironing": "Double-Sided Ironing",
+      "ironing-rescue": "Ironing Rescue Guide",
+      "why-warping": "Why Warping Happens",
+      "weight-pressing": "Weight Pressing Method",
+      "tape-method": "Tape Method for Large Projects",
+      "color-principles": "Color Selection Principles",
+      "shadow-highlight": "Shadow & Highlight",
+      "image-to-pattern": "Image to Pattern",
+      "large-grid-joining": "Large Grid Joining",
+      "gradient-technique": "Gradient Technique",
+      "multi-brand-mix": "Mixing Bead Brands",
+      "cooling-shaping": "Cooling & Shaping",
+      "display-storage": "Display & Storage"
+    }
   },
   "stats": { "noData": "No data yet", "beads": "beads", "colors": "colors" },
   "common": {
