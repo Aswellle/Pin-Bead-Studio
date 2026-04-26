@@ -263,6 +263,9 @@ export default function Gallery({ onLoadTemplate, onSaveWork, onLoadWork, savedW
                     }}
                     disabled={exportingId === template.id}
                     title="导出图纸"
+                    aria-expanded={exportMenuId === template.id}
+                    aria-haspopup="menu"
+                    aria-label="导出图纸"
                   >
                     {exportingId === template.id ? (
                       <svg className="spinning" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -278,11 +281,11 @@ export default function Gallery({ onLoadTemplate, onSaveWork, onLoadWork, savedW
                   </button>
 
                   {exportMenuId === template.id && (
-                    <div className="export-menu" onClick={e => e.stopPropagation()}>
-                      <button onClick={e => handleExportTemplate(template, 'professional', e)}>
+                    <div className="export-menu" role="menu" onClick={e => e.stopPropagation()}>
+                      <button role="menuitem" onClick={e => handleExportTemplate(template, 'professional', e)}>
                         {t('gallery.exportProfessional')}
                       </button>
-                      <button onClick={e => handleExportTemplate(template, 'realistic', e)}>
+                      <button role="menuitem" onClick={e => handleExportTemplate(template, 'realistic', e)}>
                         {t('gallery.exportRealistic')}
                       </button>
                     </div>
@@ -446,6 +449,7 @@ export default function Gallery({ onLoadTemplate, onSaveWork, onLoadWork, savedW
           overflow: hidden;
           cursor: pointer;
           transition: all 0.2s;
+          z-index: 1;
         }
         .template-card:hover {
           border-color: var(--accent);
