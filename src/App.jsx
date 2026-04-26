@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import AuthModal from './components/AuthModal'
 import Header from './components/Header'
 import Canvas from './components/Canvas'
@@ -16,6 +17,7 @@ import MobileColorPalette from './components/ColorPalette/MobileColorPalette'
 import { getPalette, PALETTES } from './data/palettes'
 
 export default function App() {
+  const { t } = useTranslation()
   const { user, loading: authLoading, login, register, logout } = useAuth()
   const { isMobile, isTablet } = useResponsive()
   const [showAuth, setShowAuth] = useState(false)
@@ -37,6 +39,9 @@ export default function App() {
   const [showExport, setShowExport] = useState(false)
   const [currentPalette, setCurrentPalette] = useState('perler')
   const [designName, setDesignName] = useState('拼豆图案')
+  const [showSaveDialog, setShowSaveDialog] = useState(false)
+  const [saveInputName, setSaveInputName] = useState('')
+  const [saveToast, setSaveToast] = useState(false)
 
   // 撤销历史
   const [history, setHistory] = useState([])
@@ -93,6 +98,30 @@ export default function App() {
     const cols = gridWidth || gridSize
     const emptyGrid = Array(rows).fill(null).map(() => Array(cols).fill(null))
     setCanvasData(emptyGrid)
+  }
+
+  const handleOpenSaveDialog = () => {
+    setSaveInputName(designName)
+    setShowSaveDialog(true)
+  }
+
+  const handleConfirmSave = () => {
+    const newWork = {
+      id: Date.now(),
+      name: saveInputName.trim() || designName,
+      canvasData,
+      gridSize,
+      gridWidth: gridWidth ?? null,
+      gridHeight: gridHeight ?? null,
+      paletteId: currentPalette,
+      savedAt: new Date().toISOString()
+    }
+    const updated = [...savedWorks, newWork]
+    setSavedWorks(updated)
+    localStorage.setItem('saved-works', JSON.stringify(updated))
+    setShowSaveDialog(false)
+    setSaveToast(true)
+    setTimeout(() => setSaveToast(false), 1500)
   }
 
   // 保存作品到 localStorage
@@ -171,6 +200,19 @@ export default function App() {
   const handleQuantizerApply = (quantizedCanvasData, options) => {
     const w = options.gridWidth || options.gridSize
     const h = options.gridHeight || options.gridSize
+
+    // Validate dimensions match
+    if (quantizedCanvasData.length !== h) {
+      console.error('量化结果高度不匹配:', quantizedCanvasData.length, 'vs', h)
+      return
+    }
+    for (let row = 0; row < h; row++) {
+      if (quantizedCanvasData[row].length !== w) {
+        console.error('量化结果宽度不匹配 at row', row, ':', quantizedCanvasData[row].length, 'vs', w)
+        return
+      }
+    }
+
     setGridSize(Math.max(w, h))
     setGridWidth(w !== h ? w : null)
     setGridHeight(w !== h ? h : null)
@@ -323,6 +365,7 @@ export default function App() {
         onLogin={openLogin}
         onRegister={openRegister}
         onLogout={logout}
+        onSave={handleOpenSaveDialog}
         currentPage={currentPage}
         onPageChange={handlePageChange}
       />
@@ -346,6 +389,34 @@ export default function App() {
           onApply={handleQuantizerApply}
           onClose={() => setShowQuantizer(false)}
         />
+      )}
+
+      {showSaveDialog && (
+        <div className="modal-overlay" onClick={() => setShowSaveDialog(false)}>
+          <div className="save-dialog" onClick={e => e.stopPropagation()}>
+            <h3>{t('gallery.saveTitle')}</h3>
+            <label>{t('gallery.saveNameLabel')}</label>
+            <input
+              autoFocus
+              type="text"
+              value={saveInputName}
+              onChange={e => setSaveInputName(e.target.value)}
+              placeholder={t('gallery.saveNamePlaceholder')}
+              onKeyDown={e => e.key === 'Enter' && handleConfirmSave()}
+            />
+            <div className="save-dialog-actions">
+              <button className="btn btn-ghost" onClick={() => setShowSaveDialog(false)}>
+                {t('common.cancel')}
+              </button>
+              <button className="btn btn-primary" onClick={handleConfirmSave}>
+                {t('gallery.saveConfirm')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {saveToast && (
+        <div className="save-toast">{t('gallery.savedToast')}</div>
       )}
 
       <style>{`
@@ -384,6 +455,68 @@ export default function App() {
         }
         .left-sidebar.collapsed .left-sidebar-top {
           width: 56px;
+        }
+        .modal-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0,0,0,0.45);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 500;
+        }
+        .save-dialog {
+          background: var(--bg-primary);
+          border-radius: 12px;
+          padding: 24px;
+          width: 360px;
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+          box-shadow: 0 8px 40px rgba(0,0,0,0.18);
+        }
+        .save-dialog h3 {
+          font-size: 18px;
+          font-weight: 600;
+          margin: 0;
+        }
+        .save-dialog label {
+          font-size: 13px;
+          color: var(--text-secondary);
+          margin-bottom: -4px;
+        }
+        .save-dialog input {
+          padding: 10px 12px;
+          border: 2px solid var(--border-color);
+          border-radius: 8px;
+          font-size: 14px;
+          background: var(--bg-secondary);
+          color: var(--text-primary);
+        }
+        .save-dialog input:focus {
+          border-color: var(--accent);
+          outline: none;
+          background: var(--bg-primary);
+        }
+        .save-dialog-actions {
+          display: flex;
+          gap: 8px;
+          justify-content: flex-end;
+          margin-top: 4px;
+        }
+        .save-toast {
+          position: fixed;
+          top: 72px;
+          left: 50%;
+          transform: translateX(-50%);
+          background: #1a1a1a;
+          color: white;
+          padding: 10px 24px;
+          border-radius: 8px;
+          font-size: 14px;
+          z-index: 1000;
+          pointer-events: none;
+          white-space: nowrap;
         }
       `}</style>
     </div>
