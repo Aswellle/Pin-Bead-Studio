@@ -210,7 +210,9 @@ export default function Tutorials() {
                 onClick={() => toggleSection(section.id)}
               >
                 <span className="section-icon">{section.icon}</span>
-                <span className="section-title">{section.title}</span>
+                <span className="section-title">
+                  {t(`tutorials.chapters.${section.id}`, section.title)}
+                </span>
                 <svg
                   className="chevron"
                   width="16"
@@ -232,7 +234,9 @@ export default function Tutorials() {
                       className={`tutorial-link ${selectedTutorial?.id === tutorial.id ? 'active' : ''}`}
                       onClick={() => selectTutorial(tutorial)}
                     >
-                      <span className="tutorial-title">{tutorial.title}</span>
+                      <span className="tutorial-title">
+                        {t(`tutorials.articles.${tutorial.id}`, tutorial.title)}
+                      </span>
                       {readProgress.includes(tutorial.id) && (
                         <svg
                           className="check-icon"
@@ -264,7 +268,9 @@ export default function Tutorials() {
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M9 18l6-6-6-6"/>
                 </svg>
-                <span className="current">{selectedTutorial.title}</span>
+                <span className="current">
+                  {t(`tutorials.articles.${selectedTutorial.id}`, selectedTutorial.title)}
+                </span>
               </div>
               <h1 className="content-title">{selectedTutorial.title}</h1>
             </div>
