@@ -233,4 +233,4 @@ Canvas / ExportPanel / Gallery
 
 ## 📄 License
 
-[MIT](LICENSE) © 2024 Aswellle
+[MIT](LICENSE) © 2026 Aswellle
