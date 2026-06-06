@@ -41,6 +41,9 @@ coverage/
 .gstack/
 .full-review/
 
+# Internal design docs / AI planning notes
+docs/superpowers/
+
 # Debug scripts
 prep-zoom.js
 
